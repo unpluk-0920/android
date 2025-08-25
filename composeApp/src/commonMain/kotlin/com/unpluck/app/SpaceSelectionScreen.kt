@@ -1,12 +1,10 @@
+// In composeApp/src/commonMain/kotlin/com/unpluck/app/SpaceSelectionScreen.kt
+package com.unpluck.app
+
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -17,7 +15,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-// Add this new function in SpaceScreen.kt
 
 @Composable
 fun LauncherSelectionScreen(
@@ -48,18 +45,37 @@ fun LauncherSelectionScreen(
 }
 
 @Composable
-fun SpaceScreen() {
-    Box(
+fun SpaceSelectionScreen(
+    spaces: List<Space>,
+    onSpaceSelected: (Space) -> Unit
+) {
+    Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black), // A simple black background
-        contentAlignment = Alignment.Center
+            .background(Color.Black)
+            .padding(16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Text(
-            text = "unpluck space",
+            text = "Select a Space",
             color = Color.White,
-            fontSize = 24.sp,
-            fontWeight = FontWeight.Bold
+            fontSize = 28.sp,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(vertical = 24.dp)
         )
+
+        LazyColumn(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            items(spaces) { space ->
+                Button(
+                    onClick = { onSpaceSelected(space) }, // Call the callback on click
+                    modifier = Modifier.fillMaxWidth().height(60.dp)
+                ) {
+                    Text(text = space.name, fontSize = 20.sp)
+                }
+            }
+        }
     }
 }

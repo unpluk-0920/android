@@ -1,49 +1,36 @@
 package com.unpluck.app
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.safeContentPadding
-import androidx.compose.material3.Button
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import org.jetbrains.compose.resources.painterResource
-import org.jetbrains.compose.ui.tooling.preview.Preview
-
-import unpluck.composeapp.generated.resources.Res
-import unpluck.composeapp.generated.resources.compose_multiplatform
 
 @Composable
-@Preview
-fun App() {
-    MaterialTheme {
-        var showContent by remember { mutableStateOf(false) }
-        Column(
-            modifier = Modifier
-                .background(MaterialTheme.colorScheme.primaryContainer)
-                .safeContentPadding()
-                .fillMaxSize(),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Button(onClick = { showContent = !showContent }) {
-                Text("Click me!")
+fun UnpluckApp(
+    spaces: List<Space>,
+    onBlockNotifications: () -> Unit,
+    onAllowNotifications: () -> Unit,
+    onEnableCallBlocking: () -> Unit,
+    onCheckSettings: () -> Unit
+) {
+    // State to keep track of the selected space. Null means no space is selected.
+    var selectedSpace by remember { mutableStateOf<Space?>(null) }
+
+    // Decide which screen to show based on the state
+    val currentSpace = selectedSpace
+    if (currentSpace == null) {
+        // If no space is selected, show the list of spaces
+        SpaceSelectionScreen(
+            spaces = spaces,
+            onSpaceSelected = { space ->
+                selectedSpace = space
             }
-            AnimatedVisibility(showContent) {
-                val greeting = remember { Greeting().greet() }
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    Image(painterResource(Res.drawable.compose_multiplatform), null)
-                    Text("Compose: $greeting")
-                }
-            }
-        }
+        )
+    } else {
+        // If a space is selected, show the apps grid for that space
+        AppsGridScreen(
+            space = currentSpace,
+            onBlockNotifications = onBlockNotifications,
+            onAllowNotifications = onAllowNotifications,
+            onEnableCallBlocking = onEnableCallBlocking,
+            onCheckSettings = onCheckSettings,
+        )
     }
 }
