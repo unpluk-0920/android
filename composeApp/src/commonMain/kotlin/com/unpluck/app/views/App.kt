@@ -1,6 +1,7 @@
-package com.unpluck.app
+package com.unpluck.app.views
 
 import androidx.compose.runtime.*
+import com.unpluck.app.defs.Space
 
 @Composable
 fun UnpluckApp(
@@ -8,7 +9,8 @@ fun UnpluckApp(
     onBlockNotifications: () -> Unit,
     onAllowNotifications: () -> Unit,
     onEnableCallBlocking: () -> Unit,
-    onCheckSettings: () -> Unit
+    onCheckSettings: () -> Unit,
+    onForceExit : () -> Unit
 ) {
     // State to keep track of the selected space. Null means no space is selected.
     var selectedSpace by remember { mutableStateOf<Space?>(null) }
@@ -31,6 +33,7 @@ fun UnpluckApp(
             onAllowNotifications = onAllowNotifications,
             onEnableCallBlocking = onEnableCallBlocking,
             onCheckSettings = onCheckSettings,
+            onForceExit = onForceExit,
         )
     }
 }

@@ -1,4 +1,5 @@
-package com.unpluck.app
+package com.unpluck.app.defs
+
 import android.graphics.drawable.Drawable
 
 data class LauncherInfo (

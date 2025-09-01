@@ -1,4 +1,4 @@
-package com.unpluck.app
+package com.unpluck.app.controllers
 
 import android.app.NotificationManager
 import android.app.role.RoleManager
@@ -13,12 +13,17 @@ import android.telecom.TelecomManager
 import android.util.Log
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.addCallback
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import com.unpluck.app.defs.Space
+import com.unpluck.app.services.BleService
+import com.unpluck.app.views.UnpluckApp
 
 class SpaceActivity : ComponentActivity() {
 
     private lateinit var notificationManager: NotificationManager
+    private var isExitingCleanly = false
 
     private val requestDndPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
@@ -52,37 +57,48 @@ class SpaceActivity : ComponentActivity() {
     // 1. Ensure the 'closeReceiver' is defined here, inside the class
     private val closeReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
-            if (intent?.action == BleService.ACTION_CLOSE_SPACE_ACTIVITY) {
+            if (intent?.action == BleService.Companion.ACTION_CLOSE_SPACE_ACTIVITY) {
                 Log.d("SpaceActivity", "Close broadcast received. Finishing activity.")
                 if(hasDndPermission()) toggleDnd(false)
+                isExitingCleanly = true
                 finish()
             }
         }
     }
 
     private fun requestCallScreeningRole() {
-        Log.d("CallScreening", "Button clicked. Requesting role...") // <-- ADD THIS
+        Log.d("CallScreening", "Button clicked. Requesting role...")
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             val roleManager = getSystemService(ROLE_SERVICE) as RoleManager
-            if (!roleManager.isRoleHeld(RoleManager.ROLE_CALL_SCREENING)) {
-                Log.d("CallScreening", "Role not held. Creating intent...") // <-- ADD THIS
-                val intent = roleManager.createRequestRoleIntent(RoleManager.ROLE_CALL_SCREENING)
-                requestRoleLauncher.launch(intent)
+            if (roleManager.isRoleAvailable(RoleManager.ROLE_CALL_SCREENING)) {
+                if (!roleManager.isRoleHeld(RoleManager.ROLE_CALL_SCREENING)) {
+                    Log.d("CallScreening", "Role not held. Creating intent...")
+                    val intent = roleManager.createRequestRoleIntent(RoleManager.ROLE_CALL_SCREENING)
+                    requestRoleLauncher.launch(intent)
+                } else {
+                    Log.d("CallScreening", "Role is already held.")
+                    Toast.makeText(this, "Call Screening is already active.", Toast.LENGTH_SHORT).show()
+                }
             } else {
-                Log.d("CallScreening", "Role is already held.") // <-- ADD THIS
-                Toast.makeText(this, "Call Screening is already active.", Toast.LENGTH_SHORT).show()
+                Log.d("CallScreening", "Role not available")
             }
         } else {
-            Log.d("CallScreening", "SDK version too old.") // <-- ADD THIS
+            Log.d("CallScreening", "SDK version too old.")
             Toast.makeText(this, "Feature requires Android 10 or higher.", Toast.LENGTH_SHORT).show()
         }
     }
     // 2. This is the 'onCreate' function you posted, which is correct
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        onBackPressedDispatcher.addCallback(this) {
+            // This callback is now enabled.
+            // By leaving this block empty, we are overriding the
+            // default back button behavior and doing nothing.
+            Log.d("SpaceActivity", "Back button pressed, but action is disabled.")
+        }
+        notificationManager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
 
-        val intentFilter = IntentFilter(BleService.ACTION_CLOSE_SPACE_ACTIVITY)
+        val intentFilter = IntentFilter(BleService.Companion.ACTION_CLOSE_SPACE_ACTIVITY)
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             registerReceiver(closeReceiver, intentFilter, RECEIVER_NOT_EXPORTED)
@@ -103,7 +119,11 @@ class SpaceActivity : ComponentActivity() {
                 onBlockNotifications = { toggleDnd(true) },
                 onAllowNotifications = { toggleDnd(false) },
                 onEnableCallBlocking = { requestCallScreeningRole() },
-                onCheckSettings = { forceOpenDefaultAppSettings() }
+                onCheckSettings = { forceOpenDefaultAppSettings() },
+                onForceExit = {
+                    isExitingCleanly = true
+                    finish()
+                }
             )
         }
     }
@@ -139,4 +159,21 @@ class SpaceActivity : ComponentActivity() {
             notificationManager.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_ALL)
         }
     }
+
+//    override fun onResume() {
+//        super.onResume()
+//        isResumed = true
+//    }
+//
+//    override fun onPause() {
+//        super.onPause()
+//        // If the activity is paused and it was previously resumed (i.e., not just starting),
+//        // it's likely due to a home button press. Re-launch the activity.
+//        if (!isExitingCleanly && isResumed) {
+//            val intent = Intent(this, SpaceActivity::class.java).apply {
+//                addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+//            }
+//            startActivity(intent)
+//        }
+//    }
 }

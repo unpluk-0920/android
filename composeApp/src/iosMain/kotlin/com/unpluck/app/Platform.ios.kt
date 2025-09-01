@@ -1,5 +1,6 @@
 package com.unpluck.app
 
+import com.unpluck.app.defs.Platform
 import platform.UIKit.UIDevice
 
 class IOSPlatform: Platform {

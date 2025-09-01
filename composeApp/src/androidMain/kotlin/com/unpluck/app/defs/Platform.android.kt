@@ -1,4 +1,4 @@
-package com.unpluck.app
+package com.unpluck.app.defs
 
 import android.os.Build
 

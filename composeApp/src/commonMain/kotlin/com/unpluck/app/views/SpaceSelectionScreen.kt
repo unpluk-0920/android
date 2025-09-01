@@ -1,5 +1,5 @@
 // In composeApp/src/commonMain/kotlin/com/unpluck/app/SpaceSelectionScreen.kt
-package com.unpluck.app
+package com.unpluck.app.views
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -14,6 +14,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.unpluck.app.defs.Space
 
 
 @Composable
@@ -21,7 +22,7 @@ fun LauncherSelectionScreen(
     // This will be a list of LauncherInfo objects, but we can't use that type in commonMain.
     // So we'll pass the data as simple lists.
     labels: List<String>,
-    onLauncherSelected: (Int) -> Unit
+    onLauncherSelected: (Int) -> Unit,
 ) {
     // We need to add implementations for Image composable to render the icon
     // For now, let's just show the names.
@@ -41,6 +42,7 @@ fun LauncherSelectionScreen(
                 }
             }
         }
+        Spacer(modifier = Modifier.height(32.dp))
     }
 }
 

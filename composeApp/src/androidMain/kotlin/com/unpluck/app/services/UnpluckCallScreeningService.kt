@@ -1,5 +1,4 @@
-// In composeApp/src/androidMain/kotlin/com/unpluck/app/UnpluckCallScreeningService.kt
-package com.unpluck.app
+package com.unpluck.app.services
 
 import android.os.Build
 import android.telecom.Call
@@ -7,7 +6,7 @@ import android.telecom.CallScreeningService
 import android.util.Log
 import androidx.annotation.RequiresApi
 
-@RequiresApi(Build.VERSION_CODES.Q) // <-- ADD THIS ANNOTATION
+@RequiresApi(Build.VERSION_CODES.Q)
 class UnpluckCallScreeningService : CallScreeningService() {
 
     override fun onScreenCall(callDetails: Call.Details) {
@@ -23,8 +22,8 @@ class UnpluckCallScreeningService : CallScreeningService() {
             CallResponse.Builder()
                 .setDisallowCall(true)
                 .setRejectCall(true)
-                .setSkipCallLog(false) // You can change this to true to hide from call log
-                .setSkipNotification(false) // You can change this to true to hide the notification
+                .setSkipCallLog(false)
+                .setSkipNotification(false)
                 .build()
         } else {
             Log.d("CallScreeningService", "Allowing call.")

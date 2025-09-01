@@ -1,4 +1,4 @@
-package com.unpluck.app
+package com.unpluck.app.defs
 
 interface Platform {
     val name: String

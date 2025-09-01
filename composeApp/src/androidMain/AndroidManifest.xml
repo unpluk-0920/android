@@ -35,35 +35,53 @@
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.Light.NoActionBar" >
         <activity
-            android:name=".SpaceActivity"
-            android:exported="false"
-            android:theme="@style/Theme.unpluck.Launcher" />
-        <activity
             android:name=".MainActivity"
             android:exported="true"
             android:launchMode="singleInstance"
-            android:theme="@style/Theme.unpluck.Launcher" >
+            android:theme="@style/Theme.unpluck.Launcher"
+            android:excludeFromRecents="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
-
                 <category android:name="android.intent.category.HOME" />
                 <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
+        <activity
+            android:name=".controllers.SpaceActivity"
+            android:exported="true"
+            android:taskAffinity=""
+            android:excludeFromRecents="true"
+            android:theme="@style/Theme.unpluck.Launcher">
+        </activity>
         <service
-            android:name=".BleService"
+            android:name=".services.BleService"
             android:enabled="true"
             android:exported="false"
             android:foregroundServiceType="connectedDevice" />
         <service
-            android:name=".UnpluckCallScreeningService"
+            android:name=".services.UnpluckCallScreeningService"
             android:exported="true"
             android:permission="android.permission.BIND_SCREENING_SERVICE"
             tools:targetApi="q">
             <intent-filter>
-                <action android:name="android.service.screening.CallScreeningService" />
+                <action android:name="android.telecom.CallScreeningService" />
             </intent-filter>
         </service>
+        <receiver
+            android:name=".receivers.FocusModeEnterReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.unpluck.app.ACTION_ENTER_FOCUS_MODE" />
+            </intent-filter>
+        </receiver>
+        <receiver
+            android:name=".receivers.FocusModeExitReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.unpluck.app.ACTION_EXIT_FOCUS_MODE" />
+            </intent-filter>
+        </receiver>
     </application>
 
 </manifest>
