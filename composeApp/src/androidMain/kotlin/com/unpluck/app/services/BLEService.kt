@@ -12,6 +12,7 @@ import android.bluetooth.le.ScanCallback
 import android.bluetooth.le.ScanFilter
 import android.bluetooth.le.ScanResult
 import android.bluetooth.le.ScanSettings
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
@@ -22,10 +23,12 @@ import android.os.Looper
 import android.os.ParcelUuid
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import com.unpluck.app.AppMode
 import com.unpluck.app.MainActivity
 import com.unpluck.app.R
 import com.unpluck.app.controllers.SpaceActivity
 import java.util.*
+import androidx.core.content.edit
 
 // These UUIDs must match your ESP32 code
 private const val SERVICE_UUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
@@ -190,52 +193,42 @@ class BleService : Service() {
     }
 
     private fun handleBleMessage(message: String) {
-
         val currentTime = System.currentTimeMillis()
-        if (currentTime - lastTriggerTimestamp < 1000) { // 1000ms = 1 second
+        if (currentTime - lastTriggerTimestamp < 1000) { // Debounce
             Log.d(TAG, "Trigger ignored (debounce)")
-            return // Exit the function if it's too soon
+            return
         }
-        lastTriggerTimestamp = currentTime // Update the timestamp
-//        when (message) {
-//            "LED is ON" -> {
-//                Log.d(TAG, "Trigger message received: Launching SpaceActivity")
-//                val intent = Intent(this, SpaceActivity::class.java).apply {
-//                    // This flag is crucial for starting an activity from a background service.
-//                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
-//                }
-//                startActivity(intent)
-////                val intent = Intent(this, MainActivity::class.java).apply {
-////                    action = "ACTION_OPEN_SPACE"
-////                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-////                }
-////                startActivity(intent)
-//
-//            }
-//            "LED is OFF" -> {
-//                Log.d(TAG, "LED is OFF: Closing SpaceActivity Sending broadcast")
-//                val intent = Intent(ACTION_CLOSE_SPACE_ACTIVITY).apply {
-//                    setPackage(packageName)
-//                }
-//                sendBroadcast(intent)
-//            }
-//        }
-        if (message.contains("ON")) {
-            Log.d(TAG, "Sending broadcast to enter focus mode")
-            // sendBroadcast(Intent(ACTION_ENTER_FOCUS_MODE).setPackage(packageName)) old
-            val intent = Intent(this, SpaceActivity::class.java).apply {
-                // This flag is crucial for starting an activity from a background service.
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
-            }
-            startActivity(intent)
+        lastTriggerTimestamp = currentTime
+
+        // 1. Get SharedPreferences
+        val prefs = getSharedPreferences("UnpluckPrefs", Context.MODE_PRIVATE)
+
+        // 2. Determine the new mode and save it
+        val newMode = if (message.contains("ON")) {
+            AppMode.FOCUS_MODE.name // Use the enum name as a string
         } else if (message.contains("OFF")) {
-            Log.d(TAG, "Sending broadcast to exit focus mode")
-            sendBroadcast(Intent(ACTION_EXIT_FOCUS_MODE).setPackage(packageName))
+            AppMode.NORMAL_MODE.name // We will rename this enum value later
+        } else {
+            return // Do nothing if the message is unknown
         }
 
-    }
-    // --- END OF MODIFICATION ---
+        prefs.edit { putString("APP_MODE_KEY", newMode) }
+        Log.d(TAG, "App mode saved: $newMode")
 
+        // 3. Send a single, generic broadcast that the mode has changed
+        val intent = Intent("com.unpluck.app.ACTION_MODE_CHANGED").setPackage(packageName)
+        sendBroadcast(intent)
+
+        // If we are entering focus mode, we MUST bring our launcher to the front.
+        if (newMode == AppMode.FOCUS_MODE.name) {
+            Log.d(TAG, "Bringing MainActivity to the foreground for Focus Mode.")
+            val mainActivityIntent = Intent(this, MainActivity::class.java).apply {
+                // This flag is essential for starting an activity from a background service.
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            startActivity(mainActivityIntent)
+        }
+    }
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val serviceChannel = NotificationChannel(
