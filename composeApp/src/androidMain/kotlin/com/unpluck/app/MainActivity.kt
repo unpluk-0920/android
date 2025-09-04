@@ -9,18 +9,15 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
-import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
-import android.telecom.TelecomManager
-import android.util.Log
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.addCallback
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.clickable
+import androidx.activity.viewModels
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.Button
 import androidx.compose.material3.Text
@@ -33,39 +30,36 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.edit
 import com.unpluck.app.defs.Space
 import com.unpluck.app.services.BleService
-import com.unpluck.app.views.UnpluckApp // Your existing Focus UI Composable
+import com.unpluck.app.views.UnpluckApp
 import androidx.core.net.toUri
+import com.unpluck.app.ui.OnboardingFlow
+import com.unpluck.app.ui.theme.UnplukTheme
 
 // The two states your launcher can be in.
 enum class AppMode {
-    NORMAL_MODE, // The mode for proxying to the OEM launcher
+    NORMAL_MODE,
     FOCUS_MODE
 }
 
 class MainActivity : ComponentActivity() {
 
-    // --- STATE MANAGEMENT ---
-    private val appMode = mutableStateOf(AppMode.NORMAL_MODE)
-    private val launcherSelected = mutableStateOf(false)
-
-    // --- SharedPreferences KEYS ---
-    private val PREFS_NAME = "UnpluckPrefs"
-    private val KEY_APP_MODE = "APP_MODE_KEY"
+   // --- SharedPreferences KEYS ---
     private val KEY_REAL_LAUNCHER_PACKAGE = "RealLauncherPackage"
     private val KEY_REAL_LAUNCHER_ACTIVITY = "RealLauncherActivity"
 
-    // --- SYSTEM SERVICES & PERMISSIONS ---
-    private lateinit var notificationManager: NotificationManager
+    private val PREFS_NAME = "UnpluckPrefs"
+    private val KEY_APP_MODE = "APP_MODE_KEY"
 
-    private val requiredPermissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-        arrayOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT)
-    } else {
-        arrayOf(Manifest.permission.ACCESS_FINE_LOCATION)
-    }
+    private var isInitialLaunch = true
+    private var isReceiverRegistered = false
+
+    private val viewModel: MainViewModel by viewModels()
+    private lateinit var notificationManager: NotificationManager
 
     private val requestPermissionsLauncher =
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { permissions ->
             if (permissions.all { it.value }) {
+                viewModel.blePermissionsGranted.value = true
                 startBleService()
             } else {
                 Toast.makeText(this, "Permissions are required for the app to function.", Toast.LENGTH_LONG).show()
@@ -75,6 +69,7 @@ class MainActivity : ComponentActivity() {
     private val requestDndPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
             if (notificationManager.isNotificationPolicyAccessGranted) {
+                viewModel.dndPermissionGranted.value = true
                 Toast.makeText(this, "DND Permission granted!", Toast.LENGTH_SHORT).show()
             } else {
                 Toast.makeText(this, "Permission is required to block notifications.", Toast.LENGTH_LONG).show()
@@ -94,6 +89,7 @@ class MainActivity : ComponentActivity() {
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 if (Settings.canDrawOverlays(this)) {
+                    viewModel.overlayPermissionGranted.value = true
                     Toast.makeText(this, "Permission Granted!", Toast.LENGTH_SHORT).show()
                 } else {
                     Toast.makeText(this, "This permission is needed for Focus Mode to appear automatically.", Toast.LENGTH_LONG).show()
@@ -101,26 +97,13 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-    private fun checkAndRequestOverlayPermission() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            if (!Settings.canDrawOverlays(this)) {
-                // If permission is not granted, open the settings screen for the user
-                val intent = Intent(
-                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                    "package:$packageName".toUri()
-                )
-                requestOverlayPermissionLauncher.launch(intent)
-            }
-        }
-    }
-
     // --- BROADCAST RECEIVER ---
     private val modeChangeReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             if (intent.action == "com.unpluck.app.ACTION_MODE_CHANGED") {
                 val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
                 val newModeName = prefs.getString(KEY_APP_MODE, AppMode.NORMAL_MODE.name)
-                appMode.value = AppMode.valueOf(newModeName ?: AppMode.NORMAL_MODE.name)
+                viewModel.appMode.value = AppMode.valueOf(newModeName ?: AppMode.NORMAL_MODE.name)
             }
         }
     }
@@ -130,36 +113,52 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         notificationManager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
 
-        // --- Initial Setup ---
-        val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
-        launcherSelected.value = prefs.contains(KEY_REAL_LAUNCHER_PACKAGE)
-        val initialModeName = prefs.getString(KEY_APP_MODE, AppMode.NORMAL_MODE.name)
-        appMode.value = AppMode.valueOf(initialModeName ?: AppMode.NORMAL_MODE.name)
+        val prefs = getSharedPreferences("UnpluckPrefs", MODE_PRIVATE)
+        viewModel.onboardingCompleted.value = prefs.getBoolean("OnboardingComplete", false)
+        viewModel.launcherSelected.value = prefs.contains("RealLauncherPackage")
+        viewModel.appMode.value = AppMode.valueOf(
+            prefs.getString("APP_MODE_KEY", AppMode.NORMAL_MODE.name) ?: AppMode.NORMAL_MODE.name
+        )
+        viewModel.updatePermissionStates(this)
 
-        checkPermissionsAndStartService()
-        registerModeChangeReceiver()
-        checkAndRequestOverlayPermission()
+        // 5. Lifecycle-aware actions
+        if (viewModel.onboardingCompleted.value) {
+            checkBlePermissionsAndStartService()
+            registerModeChangeReceiver()
+        }
 
-
-        // Disable back button ONLY when in Focus Mode
         onBackPressedDispatcher.addCallback(this) {
-            if (appMode.value == AppMode.FOCUS_MODE) {
-                Log.d("MainActivity", "Back button disabled in Focus Mode.")
-                // Do nothing to disable it
+            if (viewModel.appMode.value == AppMode.FOCUS_MODE) {
+                // In Focus Mode, back button is disabled
             } else {
-                // In normal mode, allow default back behavior (though it's unlikely to be used)
-                this.isEnabled = false
+                isEnabled = false
                 onBackPressedDispatcher.onBackPressed()
-                this.isEnabled = true
+                isEnabled = true
             }
         }
 
-        // --- UI ---
         setContent {
-            if (launcherSelected.value) {
-                MainAppUI()
-            } else {
-                LauncherSelectionScreen()
+            UnplukTheme {
+                val onboardingCompleted by viewModel.onboardingCompleted
+                val launcherSelected by viewModel.launcherSelected
+
+                if (onboardingCompleted) {
+                    if (launcherSelected) {
+                        MainAppUI()
+                    } else {
+                        LauncherSelectionScreen()
+                    }
+                } else {
+                    OnboardingFlow(
+                        viewModel = viewModel,
+                        onRequestBle = { requestPermissionsLauncher.launch(getRequiredBlePermissions()) },
+                        onRequestOverlay = { checkAndRequestOverlayPermission() },
+                        onRequestDnd = {
+                            val intent = Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS)
+                            requestDndPermissionLauncher.launch(intent)
+                        }
+                    )
+                }
             }
         }
     }
@@ -168,58 +167,33 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         // CRITICAL: This handles the home button press from another app.
         // If we are in NORMAL_MODE, immediately proxy to the real launcher.
-        if (appMode.value == AppMode.NORMAL_MODE && launcherSelected.value) {
+        if (viewModel.onboardingCompleted.value && viewModel.appMode.value == AppMode.NORMAL_MODE && viewModel.launcherSelected.value) {
             launchRealLauncher(this)
         }
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        unregisterReceiver(modeChangeReceiver)
+        if (isReceiverRegistered) {
+            unregisterReceiver(modeChangeReceiver)
+        }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        // After the first time the activity is paused, it's no longer the "initial launch"
+        isInitialLaunch = false
     }
 
     // --- COMPOSABLE UI ---
     @Composable
     private fun MainAppUI() {
-        val currentMode by appMode
+        val currentMode by viewModel.appMode
         when (currentMode) {
             AppMode.NORMAL_MODE -> ProxyToRealLauncher()
-            AppMode.FOCUS_MODE -> FocusUI()
+            AppMode.FOCUS_MODE -> FocusUI(viewModel)
         }
     }
-
-    @Composable
-    private fun FocusUI() {
-        // This is your UI from the old SpaceActivity
-        val spaces = listOf(
-            Space(id = 1, name = "Focus", appIds = emptyList()),
-            Space(id = 2, name = "Family", appIds = emptyList()),
-        )
-        UnpluckApp(
-            spaces = spaces,
-            onBlockNotifications = { toggleDnd(true) },
-            onAllowNotifications = { toggleDnd(false) },
-            onEnableCallBlocking = { requestCallScreeningRole() },
-            onCheckSettings = { /* Define action */ },
-            onForceExit = {
-                // Forcing exit now just means switching the mode
-                val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
-                prefs.edit { putString(KEY_APP_MODE, AppMode.NORMAL_MODE.name) }
-                appMode.value = AppMode.NORMAL_MODE
-            }
-        )
-    }
-
-    @Composable
-    private fun ProxyToRealLauncher() {
-        val context = LocalContext.current
-        // This effect runs once to launch the real launcher and then finish this activity
-        LaunchedEffect(Unit) {
-            launchRealLauncher(context)
-        }
-        // You can show a blank screen or a loading indicator here while it switches
-    }
-
     @Composable
     private fun LauncherSelectionScreen() {
         val context = LocalContext.current
@@ -245,7 +219,7 @@ class MainActivity : ComponentActivity() {
                         putString(KEY_REAL_LAUNCHER_PACKAGE, launcherInfo.activityInfo.packageName)
                         putString(KEY_REAL_LAUNCHER_ACTIVITY, launcherInfo.activityInfo.name)
                     }
-                    launcherSelected.value = true
+                    viewModel.launcherSelected.value = true
                 }) {
                     Text(launcherInfo.loadLabel(packageManager).toString())
                 }
@@ -254,35 +228,59 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    // --- HELPER FUNCTIONS ---
-    private fun launchRealLauncher(context: Context) {
-        val prefs = context.getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
-        val pkg = prefs.getString(KEY_REAL_LAUNCHER_PACKAGE, null)
-        val activity = prefs.getString(KEY_REAL_LAUNCHER_ACTIVITY, null)
-
-        if (pkg != null && activity != null) {
-            val launchIntent = Intent().apply {
-                setClassName(pkg, activity)
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    @Composable
+    private fun FocusUI(viewModel: MainViewModel) {
+        // This is your UI from the old SpaceActivity
+        val spaces = listOf(
+            Space(id = 1, name = "Focus", appIds = emptyList()),
+            Space(id = 2, name = "Family", appIds = emptyList()),
+        )
+        UnpluckApp(
+            spaces = spaces,
+            onBlockNotifications = { toggleDnd(true) },
+            onAllowNotifications = { toggleDnd(false) },
+            onEnableCallBlocking = { requestCallScreeningRole() },
+            onCheckSettings = { /* Define action */ },
+            onForceExit = {
+                // Forcing exit now just means switching the mode
+                val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+                prefs.edit { putString(KEY_APP_MODE, AppMode.NORMAL_MODE.name) }
+                viewModel.appMode.value = AppMode.NORMAL_MODE
             }
-            try {
-                context.startActivity(launchIntent)
-            } catch (e: Exception) {
-                Log.e("MainActivity", "Failed to launch real launcher", e)
-                // Fallback: Clear saved launcher so user can re-select
-                prefs.edit { clear() }
-                launcherSelected.value = false
-            }
-        }
-        // CRITICAL: Finish this activity to remove it from the back stack.
-        (context as? Activity)?.finish()
+        )
     }
 
-    private fun checkPermissionsAndStartService() {
-        if (requiredPermissions.all { ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED }) {
-            startBleService()
+    @Composable
+    private fun ProxyToRealLauncher() {
+        val context = LocalContext.current
+        // This effect runs once to launch the real launcher and then finish this activity
+        LaunchedEffect(Unit) {
+            launchRealLauncher(context)
+        }
+        // You can show a blank screen or a loading indicator here while it switches
+    }
+
+    private fun getRequiredBlePermissions(): Array<String> {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            arrayOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT)
         } else {
-            requestPermissionsLauncher.launch(requiredPermissions)
+            arrayOf(Manifest.permission.ACCESS_FINE_LOCATION)
+        }
+    }
+
+    private fun checkAndRequestOverlayPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !Settings.canDrawOverlays(this)) {
+            val intent = Intent(
+                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                "package:$packageName".toUri()
+            )
+            requestOverlayPermissionLauncher.launch(intent)
+        }
+    }
+
+    private fun checkBlePermissionsAndStartService() {
+        if (getRequiredBlePermissions().all { ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED }) {
+            startBleService()
         }
     }
 
@@ -304,9 +302,26 @@ class MainActivity : ComponentActivity() {
         } else {
             registerReceiver(modeChangeReceiver, intentFilter)
         }
+        isReceiverRegistered = true
     }
 
-    // --- DND & Call Screening Logic (Moved from SpaceActivity) ---
+    private fun launchRealLauncher(context: Context) {
+        val prefs = context.getSharedPreferences("UnpluckPrefs", MODE_PRIVATE)
+        val pkg = prefs.getString("RealLauncherPackage", null)
+        val activity = prefs.getString("RealLauncherActivity", null)
+        if (pkg != null && activity != null) {
+            val launchIntent = Intent().setClassName(pkg, activity).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            try {
+                context.startActivity(launchIntent)
+            } catch (e: Exception) {
+                // Handle case where launcher was uninstalled
+                prefs.edit { clear() }
+                viewModel.launcherSelected.value = false
+            }
+        }
+        (context as? Activity)?.finish()
+    }
+
     private fun hasDndPermission(): Boolean = notificationManager.isNotificationPolicyAccessGranted
 
     private fun toggleDnd(enable: Boolean) {
