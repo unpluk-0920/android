@@ -53,7 +53,7 @@ fun PermissionsScreen(
                         .padding(16.dp)
                         .height(50.dp)
                 ) {
-                    Text("Finish Setup & Select Launcher")
+                    Text("Let's Connect to SmartCover")
                 }
             }
         }

@@ -32,6 +32,7 @@ import com.unpluck.app.defs.Space
 import com.unpluck.app.services.BleService
 import com.unpluck.app.views.UnpluckApp
 import androidx.core.net.toUri
+import com.unpluck.app.ui.ActiveSpaceUI
 import com.unpluck.app.ui.OnboardingFlow
 import com.unpluck.app.ui.theme.UnplukTheme
 
@@ -120,6 +121,7 @@ class MainActivity : ComponentActivity() {
             prefs.getString("APP_MODE_KEY", AppMode.NORMAL_MODE.name) ?: AppMode.NORMAL_MODE.name
         )
         viewModel.updatePermissionStates(this)
+        viewModel.loadSpaces(this)
 
         // 5. Lifecycle-aware actions
         if (viewModel.onboardingCompleted.value) {
@@ -231,23 +233,28 @@ class MainActivity : ComponentActivity() {
     @Composable
     private fun FocusUI(viewModel: MainViewModel) {
         // This is your UI from the old SpaceActivity
-        val spaces = listOf(
-            Space(id = 1, name = "Focus", appIds = emptyList()),
-            Space(id = 2, name = "Family", appIds = emptyList()),
-        )
-        UnpluckApp(
-            spaces = spaces,
-            onBlockNotifications = { toggleDnd(true) },
-            onAllowNotifications = { toggleDnd(false) },
-            onEnableCallBlocking = { requestCallScreeningRole() },
-            onCheckSettings = { /* Define action */ },
-            onForceExit = {
-                // Forcing exit now just means switching the mode
-                val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
-                prefs.edit { putString(KEY_APP_MODE, AppMode.NORMAL_MODE.name) }
-                viewModel.appMode.value = AppMode.NORMAL_MODE
+        val spaces by viewModel.spaces
+        // Find the first (and only) space created during onboarding
+        val defaultSpace = spaces.firstOrNull()
+
+        if (defaultSpace != null) {
+            // If we found the space, display the ActiveSpaceUI
+            ActiveSpaceUI (
+                space = defaultSpace,
+                onBlockNotifications = { toggleDnd(true) },
+                onAllowNotifications = { toggleDnd(false) },
+                onForceExit = {
+                    val prefs = getSharedPreferences("UnpluckPrefs", MODE_PRIVATE)
+                    prefs.edit { putString("APP_MODE_KEY", AppMode.NORMAL_MODE.name) }
+                    viewModel.appMode.value = AppMode.NORMAL_MODE
+                }
+            )
+        } else {
+            // Show a fallback message if something went wrong and no space was found
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text("Error: No default space found. Please restart the app.")
             }
-        )
+        }
     }
 
     @Composable

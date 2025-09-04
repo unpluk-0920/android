@@ -26,7 +26,6 @@ import androidx.core.app.NotificationCompat
 import com.unpluck.app.AppMode
 import com.unpluck.app.MainActivity
 import com.unpluck.app.R
-import com.unpluck.app.controllers.SpaceActivity
 import java.util.*
 import androidx.core.content.edit
 

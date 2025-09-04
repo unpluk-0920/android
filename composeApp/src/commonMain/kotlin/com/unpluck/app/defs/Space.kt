@@ -1,7 +1,10 @@
 package com.unpluck.app.defs
 
-data class Space(
-    val id: Int,
+import kotlin.uuid.*
+
+data class Space @OptIn(ExperimentalUuidApi::class) constructor(
+    val id: String = Uuid.random().toString(),
     val name: String,
-    val appIds: List<String> // For now, this will be empty
+    // We will add app package names to this list later
+    val appIds: List<String> = emptyList()
 )
