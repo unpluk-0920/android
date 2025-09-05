@@ -2,15 +2,18 @@
 package com.unpluck.app
 
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.provider.Settings
+import android.util.Log
 import androidx.compose.runtime.mutableStateOf
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModel
 import androidx.core.content.edit
 import androidx.lifecycle.viewModelScope
 import com.unpluck.app.defs.Space
+import com.unpluck.app.services.BleService
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -22,13 +25,19 @@ enum class OnboardingStep {
     SET_LAUNCHER
 }
 
+data class BleDevice(val name: String, val address: String)
+
 class MainViewModel : ViewModel() {
 
+    private val TAG = "MAIN_VIEWMODEL"
     // --- ONBOARDING STATE ---
     val currentOnboardingStep = mutableStateOf(OnboardingStep.INTRO)
 
     // --- BLE CONNECTION STATE ---
-    val connectionStatus = mutableStateOf("Waiting to start...")
+    val foundDevices = mutableStateOf<List<BleDevice>>(emptyList())
+
+    val isScanning = mutableStateOf(false)
+    val connectionStatus = mutableStateOf("Not connected")
     val isDeviceConnected = mutableStateOf(false)
 
     val spaces = mutableStateOf<List<Space>>(emptyList())
@@ -37,9 +46,56 @@ class MainViewModel : ViewModel() {
     val launcherSelected = mutableStateOf(false)
     val onboardingCompleted = mutableStateOf(false)
 
+    // PERMISSIONS STATE
     val blePermissionsGranted = mutableStateOf(false)
     val overlayPermissionGranted = mutableStateOf(false)
     val dndPermissionGranted = mutableStateOf(false)
+    val notificationPermissionGranted = mutableStateOf(false)
+    val locationPermissionGranted = mutableStateOf(false)
+    val phonePermissionsGranted = mutableStateOf(false)
+
+    fun startScan(context: Context) {
+        Log.d(TAG, "UI requested a scan.")
+        // Clear old list and start scanning
+        foundDevices.value = emptyList()
+        isScanning.value = true
+        context.startService(Intent(context, BleService::class.java).apply { action = BleService.ACTION_START_SCAN })
+    }
+
+    fun connectToDevice(context: Context, address: String) {
+        Log.d(TAG, "UI requested connection to address: $address")
+        isScanning.value = false // Stop showing scan results
+        connectionStatus.value = "Connecting..."
+        context.startService(Intent(context, BleService::class.java).apply {
+            action = BleService.ACTION_CONNECT
+            putExtra(BleService.EXTRA_DEVICE_ADDRESS, address)
+        })
+    }
+
+    fun addFoundDevice(device: BleDevice) {
+        Log.d(TAG, "Adding found device to list: ${device.name}")
+        // Add device to the list only if it's not already there
+        if (foundDevices.value.none { it.address == device.address }) {
+            foundDevices.value = foundDevices.value + device
+        }
+    }
+
+    fun updateConnectionStatus(status: String, isConnected: Boolean) {
+        Log.d(TAG, "Updating connection status: '$status', isConnected: $isConnected")
+        connectionStatus.value = status
+        isDeviceConnected.value = isConnected
+        when {
+            status.contains("Scanning for devices...") -> {
+                isScanning.value = true
+            }
+            status.contains("Scan finished.") -> {
+                isScanning.value = false
+            }
+            status.contains("Connecting...") -> {
+                isScanning.value = false // We are no longer scanning when trying to connect
+            }
+        }
+    }
 
     fun loadSpaces(context: Context) {
         val prefs = context.getSharedPreferences("UnpluckPrefs", Context.MODE_PRIVATE)
@@ -103,6 +159,24 @@ class MainViewModel : ViewModel() {
 
         val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
         dndPermissionGranted.value = notificationManager.isNotificationPolicyAccessGranted
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            notificationPermissionGranted.value = ContextCompat.checkSelfPermission(
+                context, android.Manifest.permission.POST_NOTIFICATIONS
+            ) == PackageManager.PERMISSION_GRANTED
+        } else {
+            notificationPermissionGranted.value = true // Not needed on older versions
+        }
+
+        locationPermissionGranted.value = ContextCompat.checkSelfPermission(
+            context, android.Manifest.permission.ACCESS_FINE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED
+
+        phonePermissionsGranted.value = ContextCompat.checkSelfPermission(
+            context, android.Manifest.permission.READ_CALL_LOG
+        ) == PackageManager.PERMISSION_GRANTED && ContextCompat.checkSelfPermission(
+            context, android.Manifest.permission.READ_CONTACTS
+        ) == PackageManager.PERMISSION_GRANTED
     }
 
     fun onFinishOnboarding(context: Context) {

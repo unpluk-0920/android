@@ -8,8 +8,11 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.rounded.Bluetooth
+import androidx.compose.material.icons.rounded.Call
 import androidx.compose.material.icons.rounded.DoNotDisturb
 import androidx.compose.material.icons.rounded.Layers
+import androidx.compose.material.icons.rounded.LocationOn
+import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -34,9 +37,15 @@ fun PermissionsScreen(
     onRequestBle: () -> Unit,
     onRequestOverlay: () -> Unit,
     onRequestDnd: () -> Unit,
+    notificationGranted: Boolean,
+    locationGranted: Boolean,
+    phoneGranted: Boolean,
+    onRequestNotification: () -> Unit,
+    onRequestLocation: () -> Unit,
+    onRequestPhone: () -> Unit,
     onFinish: () -> Unit
 ) {
-    val allPermissionsGranted = bleGranted && overlayGranted && dndGranted
+    val allPermissionsGranted = bleGranted && overlayGranted && dndGranted && notificationGranted && locationGranted && phoneGranted
 
     Scaffold(
         bottomBar = {
@@ -101,6 +110,27 @@ fun PermissionsScreen(
                     rationale = "To block notifications in Focus Mode.",
                     isGranted = dndGranted,
                     onRequest = onRequestDnd
+                )
+                PermissionRow(
+                    icon = Icons.Rounded.Notifications,
+                    title = "Notifications",
+                    rationale = "Required to show the persistent service notification.",
+                    isGranted = notificationGranted,
+                    onRequest = onRequestNotification
+                )
+                PermissionRow(
+                    icon = Icons.Rounded.LocationOn,
+                    title = "Precise Location",
+                    rationale = "Required by Android to scan for nearby Bluetooth devices.",
+                    isGranted = locationGranted,
+                    onRequest = onRequestLocation
+                )
+                PermissionRow(
+                    icon = Icons.Rounded.Call,
+                    title = "Phone & Contacts",
+                    rationale = "To identify and block unwanted calls during Focus Mode.",
+                    isGranted = phoneGranted,
+                    onRequest = onRequestPhone
                 )
             }
         }

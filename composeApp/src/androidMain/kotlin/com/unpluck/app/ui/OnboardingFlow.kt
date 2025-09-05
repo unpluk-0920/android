@@ -15,17 +15,14 @@ fun OnboardingFlow(
     viewModel: MainViewModel,
     onRequestBle: () -> Unit,
     onRequestOverlay: () -> Unit,
-    onRequestDnd: () -> Unit
+    onRequestDnd: () -> Unit,
+    onRequestNotification: () -> Unit,
+    onRequestLocation: () -> Unit,
+    onRequestPhone: () -> Unit
 ) {
     val currentStep by viewModel.currentOnboardingStep
     val context = LocalContext.current
 
-    val homeSettingsLauncher = rememberLauncherForActivityResult (
-        contract = ActivityResultContracts.StartActivityForResult()
-    ) {
-        // After they return from the settings screen, we finish onboarding
-        viewModel.onFinishOnboarding(context)
-    }
     when (currentStep) {
         OnboardingStep.INTRO -> {
             IntroPagerScreen(onGetStarted = { viewModel.onIntroFinished() })
@@ -41,6 +38,12 @@ fun OnboardingFlow(
                 onRequestBle = onRequestBle,
                 onRequestOverlay = onRequestOverlay,
                 onRequestDnd = onRequestDnd,
+                notificationGranted = viewModel.notificationPermissionGranted.value,
+                locationGranted = viewModel.locationPermissionGranted.value,
+                phoneGranted = viewModel.phonePermissionsGranted.value,
+                onRequestNotification = onRequestNotification,
+                onRequestLocation = onRequestLocation,
+                onRequestPhone = onRequestPhone,
                 onFinish = {
                     viewModel.onPermissionsFinished()
                 }
@@ -49,11 +52,17 @@ fun OnboardingFlow(
         OnboardingStep.CONNECT_DEVICE -> {
             val status by viewModel.connectionStatus
             val isConnected by viewModel.isDeviceConnected
+            val isScanning by viewModel.isScanning
+            val devices by viewModel.foundDevices
             val context = LocalContext.current
+
             ConnectDeviceScreen(
                 connectionStatus = status,
                 isConnected = isConnected,
-                onConnect = { viewModel.startDeviceConnection(context) },
+                isScanning = isScanning,
+                foundDevices = devices,
+                onScan = { viewModel.startScan(context) },
+                onConnectToDevice = { address -> viewModel.connectToDevice(context, address) },
                 onNext = { viewModel.onDeviceConnected() }
             )
         }
@@ -63,8 +72,12 @@ fun OnboardingFlow(
         OnboardingStep.SET_LAUNCHER -> {
             SetLauncherScreen(
                 onSetDefaultLauncher = {
+                    // 1. Finish onboarding and save the flag FIRST.
+                    viewModel.onFinishOnboarding(context)
+
+                    // 2. THEN, send the user to the system settings.
                     val intent = Intent(Settings.ACTION_HOME_SETTINGS)
-                    homeSettingsLauncher.launch(intent)
+                    context.startActivity(intent)
                 }
             )
         }

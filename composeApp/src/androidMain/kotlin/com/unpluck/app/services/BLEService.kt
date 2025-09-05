@@ -53,9 +53,15 @@ class BleService : Service() {
     private var connectionAttemptRunnable: Runnable? = null
 
     companion object {
-        const val ACTION_CLOSE_SPACE_ACTIVITY = "com.unpluck.app.ACTION_CLOSE_SPACE_ACTIVITY"
-        const val ACTION_ENTER_FOCUS_MODE = "com.unpluck.app.ACTION_ENTER_FOCUS_MODE"
-        const val ACTION_EXIT_FOCUS_MODE = "com.unpluck.app.ACTION_EXIT_FOCUS_MODE"
+        const val ACTION_START_SCAN = "com.unpluck.app.ACTION_START_SCAN"
+        const val ACTION_CONNECT = "com.unpluck.app.ACTION_CONNECT"
+        const val ACTION_DEVICE_FOUND = "com.unpluck.app.ACTION_DEVICE_FOUND"
+        const val ACTION_STATUS_UPDATE = "com.unpluck.app.ACTION_STATUS_UPDATE"
+
+        const val EXTRA_DEVICE_ADDRESS = "EXTRA_DEVICE_ADDRESS"
+        const val EXTRA_DEVICE_NAME = "EXTRA_DEVICE_NAME"
+        const val EXTRA_STATUS_MESSAGE = "EXTRA_STATUS_MESSAGE"
+        const val EXTRA_IS_CONNECTED = "EXTRA_IS_CONNECTED"
         var isServiceRunning = false
     }
 
@@ -68,49 +74,80 @@ class BleService : Service() {
         bluetoothAdapter.bluetoothLeScanner
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        Log.d(TAG, "Service started")
+    override fun onCreate() {
+        super.onCreate()
+        isServiceRunning = true
+        Log.d(TAG, "BleService onCreate")
+
+        // --- MOVE THE ONE-TIME SETUP LOGIC HERE ---
         createNotificationChannel()
-        val notification = createForegroundNotification("Searching for ESP32...")
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(
-                FOREGROUND_NOTIFICATION_ID,
-                notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
-            )
-        } else {
-            startForeground(FOREGROUND_NOTIFICATION_ID, notification)
+        startForeground(FOREGROUND_NOTIFICATION_ID, createForegroundNotification("Unpluk service is running."))
+
+        // Auto-connect logic
+        val prefs = getSharedPreferences("UnpluckPrefs", MODE_PRIVATE)
+        val savedAddress = prefs.getString("SAVED_BLE_DEVICE_ADDRESS", null)
+        if (savedAddress != null) {
+            broadcastStatus("Attempting to auto-connect...", false)
+            val device = bluetoothAdapter.getRemoteDevice(savedAddress)
+            connectToDevice(device)
         }
-        startBleScan()
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        Log.d(TAG, "onStartCommand received action: ${intent?.action}")
+        when (intent?.action) {
+            ACTION_START_SCAN -> {
+                startBleScan()
+            }
+            ACTION_CONNECT -> {
+                val address = intent.getStringExtra(EXTRA_DEVICE_ADDRESS)
+                if (address != null) {
+                    val device = bluetoothAdapter.getRemoteDevice(address)
+                    connectToDevice(device)
+                }
+            }
+        }
         return START_STICKY
     }
 
     @SuppressLint("MissingPermission")
     private fun startBleScan() {
+        Log.d(TAG, "Attempting to start BLE scan...")
         if (!hasPermissions() || isScanning) return
-        Log.d(TAG, "Starting BLE scan")
-        updateNotification("Searching for smart case...")
-        val scanFilter = ScanFilter.Builder()
-            .setServiceUuid(ParcelUuid.fromString(SERVICE_UUID))
-            .build()
+
+        broadcastStatus("Scanning for devices...", false)
+        updateNotification("Scanning for devices...")
+        isScanning = true
+        // REMOVED: ScanFilter, we now scan for everything
         val scanSettings = ScanSettings.Builder()
             .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
             .build()
-        isScanning = true
-        bleScanner.startScan(listOf(scanFilter), scanSettings, scanCallback)
+        bleScanner.startScan(null, scanSettings, scanCallback)
+
+        // Stop scan after 10 seconds to save battery
+        Handler(Looper.getMainLooper()).postDelayed({
+            if(isScanning) {
+                isScanning = false
+                bleScanner.stopScan(scanCallback)
+                broadcastStatus("Scan finished.", false)
+                updateNotification("Scan finished.")
+            }
+        }, 10000)
     }
 
     private val scanCallback = object : ScanCallback() {
-        @SuppressLint("MissingPermission")
         override fun onScanResult(callbackType: Int, result: ScanResult) {
-            if (!isScanning) return // --- NEW: Ignore results if we're no longer scanning
-            Log.d(TAG, "Device found: ${result.device.name ?: "Unnamed"} at ${result.device.address}")
+            Log.d(TAG, "Scanner saw a device: Name=${result.device.name}, Address=${result.device.address}")
 
-            // --- NEW: Stop scanning immediately and set flag ---
-            isScanning = false
-            bleScanner.stopScan(this)
-
-            connectToDevice(result.device)
+            val deviceName = result.device.name
+            if (deviceName != null) {
+                val intent = Intent(ACTION_DEVICE_FOUND).apply {
+                    putExtra(EXTRA_DEVICE_ADDRESS, result.device.address)
+                    putExtra(EXTRA_DEVICE_NAME, deviceName)
+                    setPackage(packageName) // <-- ADD THIS LINE
+                }
+                sendBroadcast(intent)
+            }
         }
 
         override fun onScanFailed(errorCode: Int) {
@@ -120,14 +157,26 @@ class BleService : Service() {
     }
 
     private fun connectToDevice(device: BluetoothDevice) {
-        updateNotification("Connecting to smart case...")
+        disconnect()
+
+        if (isScanning) {
+            isScanning = false
+            bleScanner.stopScan(scanCallback)
+            Log.d(TAG, "Scan stopped due to connection attempt.")
+            // Also update the notification to stop showing "Scanning"
+            updateNotification("Connecting...")
+        }
+
+        connectionAttemptRunnable?.let { timeoutHandler.removeCallbacks(it) }
+
+        broadcastStatus("Connecting to ${device.name ?: device.address}...", false)
+        updateNotification("Connecting to ${device.name ?: "device"}...")
         // --- NEW: Start a connection timeout ---
         connectionAttemptRunnable = Runnable {
-            Log.e(TAG, "Connection timed out. Disconnecting and restarting scan.")
-            bluetoothGatt?.disconnect()
-            bluetoothGatt?.close()
-            bluetoothGatt = null
-            startBleScan()
+            Log.e(TAG, "Connection timed out.")
+            disconnect() // Clean up everything
+            broadcastStatus("Connection timed out.", false)
+            startBleScan() // Try scanning again
         }
         timeoutHandler.postDelayed(connectionAttemptRunnable!!, CONNECTION_TIMEOUT_MS)
 
@@ -138,28 +187,31 @@ class BleService : Service() {
     private val gattCallback = object : BluetoothGattCallback() {
         @SuppressLint("MissingPermission")
         override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
+            // First, always remove the timeout callback as a connection attempt has completed
             connectionAttemptRunnable?.let { timeoutHandler.removeCallbacks(it) }
+            connectionAttemptRunnable = null
 
             if (status == BluetoothGatt.GATT_SUCCESS) {
                 if (newState == BluetoothProfile.STATE_CONNECTED) {
                     Log.i(TAG, "Successfully connected to ${gatt.device.address}")
+                    broadcastStatus("Connected!", true)
+                    val prefs = getSharedPreferences("UnpluckPrefs", MODE_PRIVATE)
+                    prefs.edit { putString("SAVED_BLE_DEVICE_ADDRESS", gatt.device.address) }
                     bluetoothGatt = gatt
-                    // --- ADD THIS DELAY ---
                     Handler(Looper.getMainLooper()).postDelayed({
                         gatt.discoverServices()
                     }, 600)
-                    updateNotification("Connected to smart case")
                 } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
                     Log.w(TAG, "Disconnected from ${gatt.device.address}")
-                    gatt.close()
-                    bluetoothGatt = null
-                    startBleScan() // Reconnect
+                    disconnect() // Use our central cleanup function
+                    broadcastStatus("Disconnected.", false)
+                    startBleScan() // Optional: try to find it again
                 }
             } else {
-                Log.e(TAG, "Connection failed with status: $status")
-                gatt.close()
-                bluetoothGatt = null
-                startBleScan() // Reconnect
+                Log.w(TAG, "Connection attempt failed with status: $status")
+                disconnect() // Use our central cleanup function
+                broadcastStatus("Connection failed.", false)
+                startBleScan()
             }
         }
 
@@ -189,6 +241,16 @@ class BleService : Service() {
             Log.i(TAG, "Received notification: $message")
             handleBleMessage(message)
         }
+    }
+
+    private fun broadcastStatus(message: String, isConnected: Boolean) {
+        Log.d(TAG, "Broadcasting Status: '$message', isConnected: $isConnected")
+        val intent = Intent(ACTION_STATUS_UPDATE).apply {
+            putExtra(EXTRA_STATUS_MESSAGE, message)
+            putExtra(EXTRA_IS_CONNECTED, isConnected)
+            setPackage(packageName) // <-- ADD THIS LINE
+        }
+        sendBroadcast(intent)
     }
 
     private fun handleBleMessage(message: String) {
@@ -270,20 +332,22 @@ class BleService : Service() {
         }
     }
 
-    @SuppressLint("MissingPermission")
     override fun onDestroy() {
         super.onDestroy()
-        isScanning = false
-        bleScanner.stopScan(scanCallback)
-        bluetoothGatt?.close()
-        bluetoothGatt = null
+        disconnect()
         isServiceRunning = false
-
     }
 
-    override fun onCreate() {
-        super.onCreate()
-        isServiceRunning = true
+    private fun disconnect() {
+        Log.d(TAG, "Disconnecting and cleaning up resources.")
+        // Cancel any pending connection timeout
+        connectionAttemptRunnable?.let { timeoutHandler.removeCallbacks(it) }
+        connectionAttemptRunnable = null
+
+        // Disconnect and close the GATT connection
+        bluetoothGatt?.disconnect()
+        bluetoothGatt?.close()
+        bluetoothGatt = null
     }
 
     override fun onBind(intent: Intent): IBinder? = null

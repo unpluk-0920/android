@@ -3,7 +3,6 @@ package com.unpluck.app
 import android.Manifest
 import android.app.Activity
 import android.app.NotificationManager
-import android.app.role.RoleManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -12,6 +11,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.util.Log
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.addCallback
@@ -28,9 +28,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.core.content.edit
-import com.unpluck.app.defs.Space
 import com.unpluck.app.services.BleService
-import com.unpluck.app.views.UnpluckApp
 import androidx.core.net.toUri
 import com.unpluck.app.ui.ActiveSpaceUI
 import com.unpluck.app.ui.OnboardingFlow
@@ -44,6 +42,7 @@ enum class AppMode {
 
 class MainActivity : ComponentActivity() {
 
+    private val TAG = "MAIN_ACTIVITY"
    // --- SharedPreferences KEYS ---
     private val KEY_REAL_LAUNCHER_PACKAGE = "RealLauncherPackage"
     private val KEY_REAL_LAUNCHER_ACTIVITY = "RealLauncherActivity"
@@ -57,13 +56,39 @@ class MainActivity : ComponentActivity() {
     private val viewModel: MainViewModel by viewModels()
     private lateinit var notificationManager: NotificationManager
 
-    private val requestPermissionsLauncher =
+    private val requestBlePermissionsLauncher =
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { permissions ->
             if (permissions.all { it.value }) {
                 viewModel.blePermissionsGranted.value = true
                 startBleService()
             } else {
                 Toast.makeText(this, "Permissions are required for the app to function.", Toast.LENGTH_LONG).show()
+            }
+        }
+
+    private val requestLocationPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted ->
+            if (isGranted) {
+                viewModel.locationPermissionGranted.value = true
+            } else {
+                Toast.makeText(this, "Precise Location is needed to find the case.", Toast.LENGTH_LONG).show()
+            }
+        }
+
+    // NEW: Launcher for Phone & Contacts
+    private val requestPhonePermissionsLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { permissions ->
+            if (permissions.all { it.value }) {
+                viewModel.phonePermissionsGranted.value = true
+            } else {
+                Toast.makeText(this, "Call and Contact permissions are needed for call screening.", Toast.LENGTH_LONG).show()
+            }
+        }
+
+    private val requestNotificationPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted ->
+            if (isGranted) {
+                viewModel.notificationPermissionGranted.value = true
             }
         }
 
@@ -99,12 +124,27 @@ class MainActivity : ComponentActivity() {
         }
 
     // --- BROADCAST RECEIVER ---
-    private val modeChangeReceiver = object : BroadcastReceiver() {
+    private val bleUpdateReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
-            if (intent.action == "com.unpluck.app.ACTION_MODE_CHANGED") {
-                val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
-                val newModeName = prefs.getString(KEY_APP_MODE, AppMode.NORMAL_MODE.name)
-                viewModel.appMode.value = AppMode.valueOf(newModeName ?: AppMode.NORMAL_MODE.name)
+            Log.d(TAG, "Broadcast received with action: ${intent.action}")
+            when (intent.action) {
+                BleService.ACTION_DEVICE_FOUND -> {
+                    val name = intent.getStringExtra(BleService.EXTRA_DEVICE_NAME) ?: "Unnamed"
+                    val address = intent.getStringExtra(BleService.EXTRA_DEVICE_ADDRESS)
+                    if (address != null) {
+                        viewModel.addFoundDevice(BleDevice(name, address))
+                    }
+                }
+                BleService.ACTION_STATUS_UPDATE -> {
+                    val status = intent.getStringExtra(BleService.EXTRA_STATUS_MESSAGE) ?: "Unknown status"
+                    val isConnected = intent.getBooleanExtra(BleService.EXTRA_IS_CONNECTED, false)
+                    viewModel.updateConnectionStatus(status, isConnected)
+                }
+                "com.unpluck.app.ACTION_MODE_CHANGED" -> {
+                    val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+                    val newModeName = prefs.getString(KEY_APP_MODE, AppMode.NORMAL_MODE.name)
+                    viewModel.appMode.value = AppMode.valueOf(newModeName ?: AppMode.NORMAL_MODE.name)
+                }
             }
         }
     }
@@ -123,10 +163,11 @@ class MainActivity : ComponentActivity() {
         viewModel.updatePermissionStates(this)
         viewModel.loadSpaces(this)
 
+        registerBleUpdateReceiver()
+
         // 5. Lifecycle-aware actions
         if (viewModel.onboardingCompleted.value) {
             checkBlePermissionsAndStartService()
-            registerModeChangeReceiver()
         }
 
         onBackPressedDispatcher.addCallback(this) {
@@ -153,11 +194,22 @@ class MainActivity : ComponentActivity() {
                 } else {
                     OnboardingFlow(
                         viewModel = viewModel,
-                        onRequestBle = { requestPermissionsLauncher.launch(getRequiredBlePermissions()) },
+                        onRequestBle = { requestBlePermissionsLauncher.launch(getRequiredBlePermissions()) },
                         onRequestOverlay = { checkAndRequestOverlayPermission() },
                         onRequestDnd = {
                             val intent = Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS)
                             requestDndPermissionLauncher.launch(intent)
+                        },
+                        onRequestNotification = {
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                requestNotificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                            }
+                        },
+                        onRequestLocation = {
+                            requestLocationPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+                        },
+                        onRequestPhone = {
+                            requestPhonePermissionsLauncher.launch(arrayOf(Manifest.permission.READ_CALL_LOG, Manifest.permission.READ_CONTACTS))
                         }
                     )
                 }
@@ -165,29 +217,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    override fun onResume() {
-        super.onResume()
-        // CRITICAL: This handles the home button press from another app.
-        // If we are in NORMAL_MODE, immediately proxy to the real launcher.
-        if (viewModel.onboardingCompleted.value && viewModel.appMode.value == AppMode.NORMAL_MODE && viewModel.launcherSelected.value) {
-            launchRealLauncher(this)
-        }
-    }
-
-    override fun onDestroy() {
-        super.onDestroy()
-        if (isReceiverRegistered) {
-            unregisterReceiver(modeChangeReceiver)
-        }
-    }
-
-    override fun onPause() {
-        super.onPause()
-        // After the first time the activity is paused, it's no longer the "initial launch"
-        isInitialLaunch = false
-    }
-
-    // --- COMPOSABLE UI ---
     @Composable
     private fun MainAppUI() {
         val currentMode by viewModel.appMode
@@ -302,13 +331,18 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun registerModeChangeReceiver() {
-        val intentFilter = IntentFilter("com.unpluck.app.ACTION_MODE_CHANGED")
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(modeChangeReceiver, intentFilter, RECEIVER_NOT_EXPORTED)
-        } else {
-            registerReceiver(modeChangeReceiver, intentFilter)
+    private fun registerBleUpdateReceiver() {
+        val intentFilter = IntentFilter().apply {
+            addAction(BleService.ACTION_DEVICE_FOUND)
+            addAction(BleService.ACTION_STATUS_UPDATE)
+            addAction("com.unpluck.app.ACTION_MODE_CHANGED")
         }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(bleUpdateReceiver, intentFilter, RECEIVER_NOT_EXPORTED)
+        } else {
+            registerReceiver(bleUpdateReceiver, intentFilter)
+        }
+        Log.d(TAG, "BLE Update Receiver registered.")
         isReceiverRegistered = true
     }
 
@@ -344,15 +378,27 @@ class MainActivity : ComponentActivity() {
         )
     }
 
-    private fun requestCallScreeningRole() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            val roleManager = getSystemService(ROLE_SERVICE) as RoleManager
-            if (roleManager.isRoleAvailable(RoleManager.ROLE_CALL_SCREENING) && !roleManager.isRoleHeld(RoleManager.ROLE_CALL_SCREENING)) {
-                val intent = roleManager.createRequestRoleIntent(RoleManager.ROLE_CALL_SCREENING)
-                requestRoleLauncher.launch(intent)
-            } else {
-                Toast.makeText(this, "Call Screening is already active or unavailable.", Toast.LENGTH_SHORT).show()
-            }
+    override fun onResume() {
+        super.onResume()
+        // CRITICAL: This handles the home button press from another app.
+        // If we are in NORMAL_MODE, immediately proxy to the real launcher.
+        if (viewModel.onboardingCompleted.value && viewModel.appMode.value == AppMode.NORMAL_MODE && viewModel.launcherSelected.value) {
+            launchRealLauncher(this)
         }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        if (isReceiverRegistered) {
+            unregisterReceiver(bleUpdateReceiver)
+            isReceiverRegistered = false
+            Log.d(TAG, "BLE Update Receiver unregistered.")
+        }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        // After the first time the activity is paused, it's no longer the "initial launch"
+        isInitialLaunch = false
     }
 }
