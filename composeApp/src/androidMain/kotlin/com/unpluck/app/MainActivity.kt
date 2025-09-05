@@ -38,7 +38,9 @@ import androidx.core.content.edit
 import com.unpluck.app.services.BleService
 import androidx.core.net.toUri
 import com.unpluck.app.ui.ActiveSpaceUI
+import com.unpluck.app.ui.AppSelectionScreen
 import com.unpluck.app.ui.OnboardingFlow
+import com.unpluck.app.ui.SpaceSettingScreen
 import com.unpluck.app.ui.theme.UnplukTheme
 
 // The two states your launcher can be in.
@@ -298,21 +300,33 @@ class MainActivity : ComponentActivity() {
     @RequiresApi(Build.VERSION_CODES.O)
     @Composable
     private fun FocusUI(viewModel: MainViewModel) {
+        val isShowingSettings by viewModel.isShowingSpaceSettings
+        val isShowingAppSelection by viewModel.isShowingAppSelection
         // This is your UI from the old SpaceActivity
         val spaces by viewModel.spaces
         // Find the first (and only) space created during onboarding
         val defaultSpace = spaces.firstOrNull()
 
         if (defaultSpace != null) {
-            // If we found the space, display the ActiveSpaceUI
-            ActiveSpaceUI (
-                space = defaultSpace,
-                onForceExit = {
-                    val prefs = getSharedPreferences("UnpluckPrefs", MODE_PRIVATE)
-                    prefs.edit { putString("APP_MODE_KEY", AppMode.NORMAL_MODE.name) }
-                    viewModel.appMode.value = AppMode.NORMAL_MODE
+            if (isShowingSettings) {
+                if (isShowingAppSelection) {
+                    AppSelectionScreen(viewModel = viewModel)
+                } else {
+                    SpaceSettingScreen(viewModel = viewModel)
                 }
-            )
+                // Show the settings screen we just built
+            } else {
+                // If we found the space, display the ActiveSpaceUI
+                ActiveSpaceUI(
+                    space = defaultSpace,
+                    onSettingsClicked = { viewModel.showSpaceSettings(defaultSpace) },
+                    onForceExit = {
+                        val prefs = getSharedPreferences("UnpluckPrefs", MODE_PRIVATE)
+                        prefs.edit { putString("APP_MODE_KEY", AppMode.NORMAL_MODE.name) }
+                        viewModel.appMode.value = AppMode.NORMAL_MODE
+                    }
+                )
+            }
         } else {
             // Show a fallback message if something went wrong and no space was found
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {

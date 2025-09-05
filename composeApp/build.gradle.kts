@@ -84,6 +84,6 @@ dependencies {
     implementation(libs.androidx.activity)
     implementation(libs.androidx.constraintlayout)
     debugImplementation(compose.uiTooling)
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
+    implementation(libs.accompanist.drawablepainter)
 }
 

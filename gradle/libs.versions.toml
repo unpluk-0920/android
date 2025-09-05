@@ -1,4 +1,5 @@
 [versions]
+accompanistDrawablepainter = "0.37.3"
 agp = "8.7.3"
 android-compileSdk = "36"
 android-minSdk = "24"
@@ -18,6 +19,7 @@ constraintlayout = "2.1.4"
 materialIconsExtendedAndroid = "1.7.8"
 
 [libraries]
+accompanist-drawablepainter = { module = "com.google.accompanist:accompanist-drawablepainter", version.ref = "accompanistDrawablepainter" }
 androidx-material-icons-extended = { module = "androidx.compose.material:material-icons-extended", version.ref = "materialIconsExtendedAndroid" }
 androidx-material-icons-extended-android = { module = "androidx.compose.material:material-icons-extended-android", version.ref = "materialIconsExtendedAndroid" }
 androidx-material3 = { module = "androidx.compose.material3:material3" }

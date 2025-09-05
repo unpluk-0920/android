@@ -12,10 +12,13 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModel
 import androidx.core.content.edit
 import androidx.lifecycle.viewModelScope
+import com.unpluck.app.defs.AppInfo
 import com.unpluck.app.defs.Space
 import com.unpluck.app.services.BleService
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 enum class OnboardingStep {
     INTRO,
@@ -46,6 +49,10 @@ class MainViewModel : ViewModel() {
     val launcherSelected = mutableStateOf(false)
     val onboardingCompleted = mutableStateOf(false)
     val isShowingSpaceSettings = mutableStateOf(false)
+    val spaceToEdit = mutableStateOf<Space?>(null)
+    val allInstalledApps = mutableStateOf<List<AppInfo>>(emptyList())
+    val selectedAppPackages = mutableStateOf<Set<String>>(emptySet())
+    val isShowingAppSelection = mutableStateOf(false)
 
 
     // PERMISSIONS STATE
@@ -111,21 +118,6 @@ class MainViewModel : ViewModel() {
 
     fun onPermissionsFinished() {
         currentOnboardingStep.value = OnboardingStep.CONNECT_DEVICE
-    }
-
-    fun startDeviceConnection(context: Context) {
-        viewModelScope.launch {
-            connectionStatus.value = "Starting BLE Service..."
-            // In a real app, you would start the service and listen for a broadcast.
-            // For this example, we'll simulate the process.
-            delay(1000)
-            connectionStatus.value = "Scanning for your SmartCase..."
-            delay(2000)
-            connectionStatus.value = "Connecting..."
-            delay(1500)
-            connectionStatus.value = "Connected! You're all set."
-            isDeviceConnected.value = true
-        }
     }
 
     fun onDeviceConnected() {
@@ -230,11 +222,96 @@ class MainViewModel : ViewModel() {
         }
     }
 
-    fun showSpaceSettings() {
+    fun showSpaceSettings(space: Space) {
+        spaceToEdit.value = space
+        selectedAppPackages.value = space.appIds.toSet() // Load current selection
         isShowingSpaceSettings.value = true
     }
 
     fun hideSpaceSettings() {
         isShowingSpaceSettings.value = false
+    }
+
+    fun updateSpaceName(context: Context, newName: String) {
+        val spaceToUpdate = spaceToEdit.value ?: return
+
+        // Load the current list of spaces
+        val prefs = context.getSharedPreferences("UnpluckPrefs", Context.MODE_PRIVATE)
+        val savedString = prefs.getString("SPACES_LIST_KEY", null)
+        val currentSpaces = parseSpacesFromString(savedString).toMutableList()
+
+        // Find the index of the space we need to update
+        val index = currentSpaces.indexOfFirst { it.id == spaceToUpdate.id }
+
+        if (index != -1) {
+            // Replace the old space with a new one containing the updated name
+            currentSpaces[index] = spaceToUpdate.copy(name = newName)
+
+            // Save the modified list back to SharedPreferences
+            val updatedString = convertSpacesToString(currentSpaces)
+            prefs.edit { putString("SPACES_LIST_KEY", updatedString) }
+
+            // Update the live 'spaces' state to refresh the UI immediately
+            spaces.value = currentSpaces
+
+            // Go back to the main focus screen
+            hideSpaceSettings()
+        }
+    }
+
+    fun loadAllInstalledApps(context: Context) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val packageManager = context.packageManager
+            val mainIntent = Intent(Intent.ACTION_MAIN, null).addCategory(Intent.CATEGORY_LAUNCHER)
+            val apps = packageManager.queryIntentActivities(mainIntent, 0)
+                .mapNotNull {
+                    try {
+                        AppInfo(
+                            name = it.loadLabel(packageManager).toString(),
+                            packageName = it.activityInfo.packageName,
+                            icon = it.loadIcon(packageManager)
+                        )
+                    } catch (e: Exception) {
+                        null
+                    }
+                }
+                .sortedBy { it.name.lowercase() }
+
+            withContext(Dispatchers.Main) {
+                allInstalledApps.value = apps
+            }
+        }
+    }
+
+    fun onAppSelectionChanged(packageName: String, isSelected: Boolean) {
+        val currentSelection = selectedAppPackages.value.toMutableSet()
+        if (isSelected) {
+            currentSelection.add(packageName)
+        } else {
+            currentSelection.remove(packageName)
+        }
+        selectedAppPackages.value = currentSelection
+    }
+
+    // NEW: Saves the final app selection back to the Space
+    fun saveAppSelection(context: Context) {
+        val spaceToUpdate = spaceToEdit.value ?: return
+        val currentSpaces = spaces.value.toMutableList()
+        val index = currentSpaces.indexOfFirst { it.id == spaceToUpdate.id }
+
+        if (index != -1) {
+            // Update the space with the new list of app IDs
+            currentSpaces[index] = spaceToUpdate.copy(appIds = selectedAppPackages.value.toList())
+
+            // Save the entire list of spaces back to SharedPreferences
+            val prefs = context.getSharedPreferences("UnpluckPrefs", Context.MODE_PRIVATE)
+            val updatedString = convertSpacesToString(currentSpaces)
+            prefs.edit().putString("SPACES_LIST_KEY", updatedString).apply()
+
+            // Update the live state
+            spaces.value = currentSpaces
+        }
+        // Navigate back to the main settings screen
+        isShowingAppSelection.value = false
     }
 }
