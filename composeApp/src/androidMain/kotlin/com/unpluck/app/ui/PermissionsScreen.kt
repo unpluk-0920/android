@@ -4,6 +4,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
@@ -23,11 +24,16 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.unpluck.app.ui.theme.GradientEnd
+import com.unpluck.app.ui.theme.GradientMid
+import com.unpluck.app.ui.theme.GradientMid2
+import com.unpluck.app.ui.theme.GradientStart
 
 @Composable
 fun PermissionsScreen(
@@ -46,8 +52,13 @@ fun PermissionsScreen(
     onFinish: () -> Unit
 ) {
     val allPermissionsGranted = bleGranted && overlayGranted && dndGranted && notificationGranted && locationGranted && phoneGranted
+    val gradientColors = listOf(GradientStart, GradientMid, GradientMid2, GradientEnd)
 
     Scaffold(
+        modifier = Modifier.background(
+            brush = Brush.linearGradient(colors = gradientColors)
+        ),
+        containerColor = Color.Transparent,
         bottomBar = {
             // The finish button is only visible when all permissions are granted
             AnimatedVisibility(
@@ -148,7 +159,7 @@ private fun PermissionRow(
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant
+            containerColor = Color.Transparent
         )
     ) {
         Row(
@@ -161,7 +172,7 @@ private fun PermissionRow(
                 imageVector = Icons.Filled.CheckCircle,
                 contentDescription = "Status",
                 modifier = Modifier.size(32.dp),
-                tint = if (isGranted) Color(0xFF00C853) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
+                tint = if (isGranted) Color(0xFF9BF39B) else Color.LightGray
             )
 
             // Title and rationale

@@ -1,6 +1,7 @@
 // In ui/ConnectDeviceScreen.kt
 package com.unpluck.app.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -9,9 +10,15 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.unpluck.app.BleDevice
+import com.unpluck.app.ui.theme.GradientEnd
+import com.unpluck.app.ui.theme.GradientMid
+import com.unpluck.app.ui.theme.GradientMid2
+import com.unpluck.app.ui.theme.GradientStart
 
 @Composable
 fun ConnectDeviceScreen(
@@ -23,7 +30,14 @@ fun ConnectDeviceScreen(
     onConnectToDevice: (String) -> Unit,
     onNext: () -> Unit
 ) {
-    Scaffold { paddingValues ->
+    val gradientColors = listOf(GradientStart, GradientMid, GradientMid2, GradientEnd)
+
+    Scaffold(
+        modifier = Modifier.background(
+            brush = Brush.linearGradient(colors = gradientColors)
+        ),
+        containerColor = Color.Transparent
+    ) { paddingValues ->
         Column(
             modifier = Modifier.padding(paddingValues).fillMaxSize().padding(32.dp),
             horizontalAlignment = Alignment.CenterHorizontally,

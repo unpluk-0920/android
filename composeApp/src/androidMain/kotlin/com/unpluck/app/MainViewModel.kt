@@ -45,6 +45,8 @@ class MainViewModel : ViewModel() {
     val appMode = mutableStateOf(AppMode.NORMAL_MODE)
     val launcherSelected = mutableStateOf(false)
     val onboardingCompleted = mutableStateOf(false)
+    val isShowingSpaceSettings = mutableStateOf(false)
+
 
     // PERMISSIONS STATE
     val blePermissionsGranted = mutableStateOf(false)
@@ -226,5 +228,13 @@ class MainViewModel : ViewModel() {
                 null // Ignore malformed entries
             }
         }
+    }
+
+    fun showSpaceSettings() {
+        isShowingSpaceSettings.value = true
+    }
+
+    fun hideSpaceSettings() {
+        isShowingSpaceSettings.value = false
     }
 }

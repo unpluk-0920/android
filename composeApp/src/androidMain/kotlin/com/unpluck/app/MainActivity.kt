@@ -18,6 +18,13 @@ import androidx.activity.addCallback
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.annotation.RequiresApi
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.Button
 import androidx.compose.material3.Text
@@ -150,6 +157,7 @@ class MainActivity : ComponentActivity() {
     }
 
     // --- LIFECYCLE METHODS ---
+    @RequiresApi(Build.VERSION_CODES.O)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         notificationManager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
@@ -217,12 +225,40 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    @RequiresApi(Build.VERSION_CODES.O)
     @Composable
     private fun MainAppUI() {
         val currentMode by viewModel.appMode
-        when (currentMode) {
-            AppMode.NORMAL_MODE -> ProxyToRealLauncher()
-            AppMode.FOCUS_MODE -> FocusUI(viewModel)
+
+        // NEW: Local state to control the animation trigger. Starts as false.
+        var showFocusUI by remember { mutableStateOf(false) }
+
+        // This effect runs when the composable first appears or when currentMode changes.
+        // It syncs our local animation trigger with the real app state.
+        LaunchedEffect(currentMode) {
+            showFocusUI = (currentMode == AppMode.FOCUS_MODE)
+        }
+
+        // Now we can go back to a simpler structure
+        if (currentMode == AppMode.NORMAL_MODE) {
+            // We only show the proxy when in normal mode. It doesn't need to animate.
+            ProxyToRealLauncher()
+        }
+
+        // The animation is now driven by the local 'showFocusUI' state,
+        // which guarantees a false -> true transition on screen.
+        AnimatedVisibility(
+            visible = showFocusUI,
+            enter = slideInVertically(
+                animationSpec = tween(durationMillis = 400),
+                initialOffsetY = { fullHeight -> -fullHeight }
+            ) + fadeIn(animationSpec = tween(durationMillis = 400)),
+            exit = slideOutVertically(
+                animationSpec = tween(durationMillis = 400),
+                targetOffsetY = { fullHeight -> -fullHeight }
+            ) + fadeOut(animationSpec = tween(durationMillis = 400))
+        ) {
+            FocusUI(viewModel = viewModel)
         }
     }
     @Composable
@@ -259,6 +295,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    @RequiresApi(Build.VERSION_CODES.O)
     @Composable
     private fun FocusUI(viewModel: MainViewModel) {
         // This is your UI from the old SpaceActivity
@@ -270,8 +307,6 @@ class MainActivity : ComponentActivity() {
             // If we found the space, display the ActiveSpaceUI
             ActiveSpaceUI (
                 space = defaultSpace,
-                onBlockNotifications = { toggleDnd(true) },
-                onAllowNotifications = { toggleDnd(false) },
                 onForceExit = {
                     val prefs = getSharedPreferences("UnpluckPrefs", MODE_PRIVATE)
                     prefs.edit { putString("APP_MODE_KEY", AppMode.NORMAL_MODE.name) }
