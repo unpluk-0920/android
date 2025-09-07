@@ -2,6 +2,7 @@
 package com.unpluck.app.ui
 
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -12,32 +13,46 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.unpluck.app.MainViewModel
 import com.unpluck.app.defs.AppInfo
 import com.google.accompanist.drawablepainter.rememberDrawablePainter
+import com.unpluck.app.ui.theme.GradientEnd
+import com.unpluck.app.ui.theme.GradientMid
+import com.unpluck.app.ui.theme.GradientMid2
+import com.unpluck.app.ui.theme.GradientStart
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AppSelectionScreen(viewModel: MainViewModel) {
     val allApps by viewModel.allInstalledApps
     val selectedApps by viewModel.selectedAppPackages
+    val gradientColors = listOf(GradientStart, GradientMid, GradientMid2, GradientEnd)
 
     Scaffold(
+        modifier = Modifier.background(
+            brush = Brush.linearGradient(colors = gradientColors)
+        ),
+        containerColor = Color.Transparent,
         topBar = {
             TopAppBar(
-                title = { Text("Select Allowed Apps") },
+                title = { Text("Select Allowed Apps", color = Color.Black) },
                 navigationIcon = {
                     IconButton(onClick = { viewModel.navigateBack() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.Black)
                     }
                 },
                 actions = {
                     TextButton(onClick = { viewModel.saveAppSelection() }) {
                         Text("Save")
                     }
-                }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = Color.Transparent
+                )
             )
         }
     ) { paddingValues ->
