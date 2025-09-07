@@ -4,7 +4,10 @@ package com.unpluck.app.ui
 import android.util.Log
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.rounded.Spa
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -23,16 +26,31 @@ import com.unpluck.app.ui.theme.GradientStart
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CreateSpaceScreen(
-    onCreate: (String) -> Unit
+    onCreate: (String) -> Unit,
+    onClose: () -> Unit = {}
 ) {
     var spaceName by remember { mutableStateOf("") }
     val gradientColors = listOf(GradientStart, GradientMid, GradientMid2, GradientEnd)
 
     Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("") },
+                navigationIcon = {
+                    IconButton(onClick = onClose) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = Color.Black)
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = Color.Transparent,
+                    navigationIconContentColor = MaterialTheme.colorScheme.onSurface
+                )
+            )
+        },
         modifier = Modifier.background(
             brush = Brush.linearGradient(colors = gradientColors)
         ),
-        containerColor = Color.Transparent
+        containerColor = Color.Transparent,
     ) { paddingValues ->
         Column(
             modifier = Modifier

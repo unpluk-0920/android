@@ -49,7 +49,6 @@ import com.unpluck.app.ui.OnboardingFlow
 import com.unpluck.app.ui.SpaceSettingScreen
 import com.unpluck.app.ui.theme.UnplukTheme
 
-// The two states your launcher can be in.
 enum class AppMode {
     NORMAL_MODE,
     FOCUS_MODE
@@ -185,6 +184,7 @@ class MainActivity : ComponentActivity() {
         )
         viewModel.updatePermissionStates(this)
         viewModel.loadSpaces(this)
+        viewModel.loadInitialSpace(this)
 
         registerBleUpdateReceiver()
 
@@ -334,7 +334,13 @@ class MainActivity : ComponentActivity() {
             }
             FocusScreen.SPACE_LIST -> SpaceListScreen(viewModel)
             FocusScreen.CREATE_SPACE -> CreateSpaceScreen(
-                onCreate = { name -> viewModel.createNewSpace(this, name) }
+                onCreate = {
+                    name -> viewModel.createNewSpace(this, name)
+                    viewModel.navigateBack()
+                },
+                onClose = {
+                    viewModel.navigateBack()
+                }
             )
             FocusScreen.SPACE_SETTINGS -> SpaceSettingScreen(viewModel)
             FocusScreen.APP_SELECTION -> {
