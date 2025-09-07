@@ -1,5 +1,6 @@
 package com.unpluck.app
 
+import SpaceListScreen
 import android.Manifest
 import android.app.Activity
 import android.app.NotificationManager
@@ -37,8 +38,13 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.edit
 import com.unpluck.app.services.BleService
 import androidx.core.net.toUri
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import com.unpluck.app.data.AppDatabase
+import com.unpluck.app.defs.BleDevice
 import com.unpluck.app.ui.ActiveSpaceUI
 import com.unpluck.app.ui.AppSelectionScreen
+import com.unpluck.app.ui.CreateSpaceScreen
 import com.unpluck.app.ui.OnboardingFlow
 import com.unpluck.app.ui.SpaceSettingScreen
 import com.unpluck.app.ui.theme.UnplukTheme
@@ -62,7 +68,14 @@ class MainActivity : ComponentActivity() {
     private var isInitialLaunch = true
     private var isReceiverRegistered = false
 
-    private val viewModel: MainViewModel by viewModels()
+    private val viewModel: MainViewModel by viewModels {
+        object : ViewModelProvider.Factory {
+            override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                val db = AppDatabase.getDatabase(applicationContext)
+                return MainViewModel(db.spaceDao()) as T
+            }
+        }
+    }
     private lateinit var notificationManager: NotificationManager
 
     private val requestBlePermissionsLauncher =
@@ -135,7 +148,7 @@ class MainActivity : ComponentActivity() {
     // --- BROADCAST RECEIVER ---
     private val bleUpdateReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
-            Log.d(TAG, "Broadcast received with action: ${intent.action}")
+//            Log.d(TAG, "Broadcast received with action: ${intent.action}")
             when (intent.action) {
                 BleService.ACTION_DEVICE_FOUND -> {
                     val name = intent.getStringExtra(BleService.EXTRA_DEVICE_NAME) ?: "Unnamed"
@@ -231,6 +244,7 @@ class MainActivity : ComponentActivity() {
     @Composable
     private fun MainAppUI() {
         val currentMode by viewModel.appMode
+        val currentFocusScreen by viewModel.currentFocusScreen
 
         // NEW: Local state to control the animation trigger. Starts as false.
         var showFocusUI by remember { mutableStateOf(false) }
@@ -260,7 +274,7 @@ class MainActivity : ComponentActivity() {
                 targetOffsetY = { fullHeight -> -fullHeight }
             ) + fadeOut(animationSpec = tween(durationMillis = 400))
         ) {
-            FocusUI(viewModel = viewModel)
+            FocusUI(viewModel = viewModel, currentScreen = currentFocusScreen)
         }
     }
     @Composable
@@ -299,38 +313,32 @@ class MainActivity : ComponentActivity() {
 
     @RequiresApi(Build.VERSION_CODES.O)
     @Composable
-    private fun FocusUI(viewModel: MainViewModel) {
-        val isShowingSettings by viewModel.isShowingSpaceSettings
-        val isShowingAppSelection by viewModel.isShowingAppSelection
-        // This is your UI from the old SpaceActivity
-        val spaces by viewModel.spaces
-        // Find the first (and only) space created during onboarding
-        val defaultSpace = spaces.firstOrNull()
+    private fun FocusUI(viewModel: MainViewModel, currentScreen: FocusScreen) {
+//        val currentScreen by viewModel.currentFocusScreen
+        val activeSpace by viewModel.activeSpace
+        Log.d("FOCUS_UI", "Recomposing. Current screen state: $currentScreen") // <-- ADD THIS
 
-        if (defaultSpace != null) {
-            if (isShowingSettings) {
-                if (isShowingAppSelection) {
-                    AppSelectionScreen(viewModel = viewModel)
-                } else {
-                    SpaceSettingScreen(viewModel = viewModel)
-                }
-                // Show the settings screen we just built
-            } else {
-                // If we found the space, display the ActiveSpaceUI
-                ActiveSpaceUI(
-                    space = defaultSpace,
-                    onSettingsClicked = { viewModel.showSpaceSettings(defaultSpace) },
-                    onForceExit = {
-                        val prefs = getSharedPreferences("UnpluckPrefs", MODE_PRIVATE)
-                        prefs.edit { putString("APP_MODE_KEY", AppMode.NORMAL_MODE.name) }
-                        viewModel.appMode.value = AppMode.NORMAL_MODE
-                    }
-                )
+        when (currentScreen) {
+            FocusScreen.ACTIVE_SPACE -> {
+                activeSpace?.let {
+                    ActiveSpaceUI(
+                        space = it,
+                        onSettingsClicked = { viewModel.navigateToSpaceList() },
+                        onForceExit = {
+                            val prefs = getSharedPreferences("UnpluckPrefs", MODE_PRIVATE)
+                            prefs.edit { putString("APP_MODE_KEY", AppMode.NORMAL_MODE.name) }
+                            viewModel.appMode.value = AppMode.NORMAL_MODE
+                        }
+                    )
+                } ?: Box(modifier=Modifier.fillMaxSize(), contentAlignment=Alignment.Center){ Text("Create a Space to get started!")}
             }
-        } else {
-            // Show a fallback message if something went wrong and no space was found
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("Error: No default space found. Please restart the app.")
+            FocusScreen.SPACE_LIST -> SpaceListScreen(viewModel)
+            FocusScreen.CREATE_SPACE -> CreateSpaceScreen(
+                onCreate = { name -> viewModel.createNewSpace(this, name) }
+            )
+            FocusScreen.SPACE_SETTINGS -> SpaceSettingScreen(viewModel)
+            FocusScreen.APP_SELECTION -> {
+                AppSelectionScreen(viewModel = viewModel)
             }
         }
     }

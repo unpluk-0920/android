@@ -6,7 +6,7 @@ plugins {
     alias(libs.plugins.androidApplication)
     alias(libs.plugins.composeMultiplatform)
     alias(libs.plugins.composeCompiler)
-    id("org.jetbrains.kotlin.plugin.serialization")
+    alias(libs.plugins.ksp)
 }
 
 kotlin {
@@ -38,6 +38,9 @@ kotlin {
             implementation(libs.androidx.lifecycle.runtimeCompose)
             implementation(compose.components.uiToolingPreview)
             implementation(compose.ui)
+            // Room Database
+            implementation(libs.androidx.room.runtime)
+            implementation(libs.androidx.room.ktx)
         }
         commonMain.dependencies {
             implementation(compose.runtime)
@@ -85,5 +88,5 @@ dependencies {
     implementation(libs.androidx.constraintlayout)
     debugImplementation(compose.uiTooling)
     implementation(libs.accompanist.drawablepainter)
+    ksp(libs.androidx.room.compiler)
 }
-

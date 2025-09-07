@@ -23,19 +23,18 @@ import com.google.accompanist.drawablepainter.rememberDrawablePainter
 fun AppSelectionScreen(viewModel: MainViewModel) {
     val allApps by viewModel.allInstalledApps
     val selectedApps by viewModel.selectedAppPackages
-    val context = LocalContext.current
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("Select Allowed Apps") },
                 navigationIcon = {
-                    IconButton(onClick = { viewModel.isShowingAppSelection.value = false }) {
+                    IconButton(onClick = { viewModel.navigateBack() }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
                 actions = {
-                    TextButton(onClick = { viewModel.saveAppSelection(context) }) {
+                    TextButton(onClick = { viewModel.saveAppSelection() }) {
                         Text("Save")
                     }
                 }

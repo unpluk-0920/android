@@ -1,4 +1,3 @@
-// In MainViewModel.kt
 package com.unpluck.app
 
 import android.content.Context
@@ -12,13 +11,26 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModel
 import androidx.core.content.edit
 import androidx.lifecycle.viewModelScope
+import com.unpluck.app.data.SpaceDao
 import com.unpluck.app.defs.AppInfo
+import com.unpluck.app.defs.BleDevice
 import com.unpluck.app.defs.Space
 import com.unpluck.app.services.BleService
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+
+enum class FocusScreen {
+    ACTIVE_SPACE,
+    SPACE_LIST,
+    SPACE_SETTINGS,
+    CREATE_SPACE,
+
+    APP_SELECTION
+}
 
 enum class OnboardingStep {
     INTRO,
@@ -27,24 +39,23 @@ enum class OnboardingStep {
     CREATE_SPACE,
     SET_LAUNCHER
 }
-
-data class BleDevice(val name: String, val address: String)
-
-class MainViewModel : ViewModel() {
+class MainViewModel(private val dao: SpaceDao) : ViewModel() {
 
     private val TAG = "MAIN_VIEWMODEL"
     // --- ONBOARDING STATE ---
     val currentOnboardingStep = mutableStateOf(OnboardingStep.INTRO)
 
-    // --- BLE CONNECTION STATE ---
-    val foundDevices = mutableStateOf<List<BleDevice>>(emptyList())
+    // --- All STATES ---
+    val allSpaces: StateFlow<List<Space>> = dao.getAllSpaces()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    val activeSpace = mutableStateOf<Space?>(null) // The currently active space
+    val currentFocusScreen = mutableStateOf(FocusScreen.ACTIVE_SPACE)
+    val foundDevices = mutableStateOf<List<BleDevice>>(emptyList())
     val isScanning = mutableStateOf(false)
     val connectionStatus = mutableStateOf("Not connected")
     val isDeviceConnected = mutableStateOf(false)
-
     val spaces = mutableStateOf<List<Space>>(emptyList())
-
     val appMode = mutableStateOf(AppMode.NORMAL_MODE)
     val launcherSelected = mutableStateOf(false)
     val onboardingCompleted = mutableStateOf(false)
@@ -62,6 +73,57 @@ class MainViewModel : ViewModel() {
     val notificationPermissionGranted = mutableStateOf(false)
     val locationPermissionGranted = mutableStateOf(false)
     val phonePermissionsGranted = mutableStateOf(false)
+
+    init {
+        viewModelScope.launch {
+            allSpaces.collect { spaces ->
+                if (activeSpace.value == null && spaces.isNotEmpty()) {
+                    activeSpace.value = spaces.first()
+                }
+            }
+        }
+    }
+
+    fun createNewSpace(context: Context, name: String) {
+        Log.d("VIEW_MODEL", "createNewSpace called with name: $name")
+        viewModelScope.launch {
+            dao.insert(Space(name = name))
+            // This is now the last step IN the main onboarding flow.
+            // This will trigger MainActivity to show the LauncherSelectionScreen.
+            currentOnboardingStep.value = OnboardingStep.SET_LAUNCHER
+        }
+    }
+
+    fun navigateToSpaceList() { currentFocusScreen.value = FocusScreen.SPACE_LIST }
+    fun navigateToCreateSpace() { currentFocusScreen.value = FocusScreen.CREATE_SPACE }
+    fun navigateToAppSelection() { currentFocusScreen.value = FocusScreen.APP_SELECTION }
+    fun navigateToSettings(space: Space) {
+        spaceToEdit.value = space
+        selectedAppPackages.value = space.appIds.toSet()
+        currentFocusScreen.value = FocusScreen.SPACE_SETTINGS
+    }
+    fun navigateBack() {
+        Log.d("VIEW_MODEL", "navigateBack called. Current screen is ${currentFocusScreen.value}") // <-- ADD THIS
+        // Simple back navigation logic
+        when(currentFocusScreen.value) {
+            FocusScreen.SPACE_LIST -> currentFocusScreen.value = FocusScreen.ACTIVE_SPACE
+            FocusScreen.CREATE_SPACE -> currentFocusScreen.value = FocusScreen.SPACE_LIST
+            FocusScreen.SPACE_SETTINGS -> currentFocusScreen.value = FocusScreen.SPACE_LIST
+            FocusScreen.APP_SELECTION -> currentFocusScreen.value = FocusScreen.SPACE_SETTINGS
+            else -> {}
+        }
+    }
+
+    fun setActiveSpace(space: Space) {
+        activeSpace.value = space
+        currentFocusScreen.value = FocusScreen.ACTIVE_SPACE // Go back to the active screen
+    }
+
+    fun updateSpace(space: Space) {
+        viewModelScope.launch {
+            dao.update(space)
+        }
+    }
 
     fun startScan(context: Context) {
         Log.d(TAG, "UI requested a scan.")
@@ -82,7 +144,7 @@ class MainViewModel : ViewModel() {
     }
 
     fun addFoundDevice(device: BleDevice) {
-        Log.d(TAG, "Adding found device to list: ${device.name}")
+//        Log.d(TAG, "Adding found device to list: ${device.name}")
         // Add device to the list only if it's not already there
         if (foundDevices.value.none { it.address == device.address }) {
             foundDevices.value = foundDevices.value + device
@@ -128,12 +190,6 @@ class MainViewModel : ViewModel() {
         currentOnboardingStep.value = OnboardingStep.SET_LAUNCHER
     }
 
-    // This will be called when the final button is clicked.
-    // MainActivity will observe a change and launch the settings intent.
-    fun onSetLauncher() {
-        // We'll handle this with a callback or event to the Activity
-    }
-
     fun updatePermissionStates(context: Context) {
         val requiredPermissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             arrayOf(android.Manifest.permission.BLUETOOTH_SCAN, android.Manifest.permission.BLUETOOTH_CONNECT)
@@ -176,6 +232,7 @@ class MainViewModel : ViewModel() {
     fun onFinishOnboarding(context: Context) {
         val prefs = context.getSharedPreferences("UnpluckPrefs", Context.MODE_PRIVATE)
         prefs.edit { putBoolean("OnboardingComplete", true) }
+
         onboardingCompleted.value = true
     }
 
@@ -294,24 +351,17 @@ class MainViewModel : ViewModel() {
     }
 
     // NEW: Saves the final app selection back to the Space
-    fun saveAppSelection(context: Context) {
+    fun saveAppSelection() {
         val spaceToUpdate = spaceToEdit.value ?: return
-        val currentSpaces = spaces.value.toMutableList()
-        val index = currentSpaces.indexOfFirst { it.id == spaceToUpdate.id }
 
-        if (index != -1) {
-            // Update the space with the new list of app IDs
-            currentSpaces[index] = spaceToUpdate.copy(appIds = selectedAppPackages.value.toList())
+        // Create an updated copy of the space with the new app list from our selection.
+        val updatedSpace = spaceToUpdate.copy(appIds = selectedAppPackages.value.toList())
 
-            // Save the entire list of spaces back to SharedPreferences
-            val prefs = context.getSharedPreferences("UnpluckPrefs", Context.MODE_PRIVATE)
-            val updatedString = convertSpacesToString(currentSpaces)
-            prefs.edit().putString("SPACES_LIST_KEY", updatedString).apply()
-
-            // Update the live state
-            spaces.value = currentSpaces
+        // Launch a coroutine to perform the database operation.
+        viewModelScope.launch {
+            dao.update(updatedSpace) // This saves the changes to the database.
         }
         // Navigate back to the main settings screen
-        isShowingAppSelection.value = false
+        navigateBack()
     }
 }

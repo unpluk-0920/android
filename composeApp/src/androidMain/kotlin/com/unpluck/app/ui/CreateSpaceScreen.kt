@@ -1,6 +1,7 @@
 // In ui/CreateSpaceScreen.kt
 package com.unpluck.app.ui
 
+import android.util.Log
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
@@ -11,11 +12,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import com.unpluck.app.MainViewModel
 import com.unpluck.app.ui.theme.GradientEnd
 import com.unpluck.app.ui.theme.GradientMid
 import com.unpluck.app.ui.theme.GradientMid2
@@ -23,9 +22,10 @@ import com.unpluck.app.ui.theme.GradientStart
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun CreateSpaceScreen(viewModel: MainViewModel) {
+fun CreateSpaceScreen(
+    onCreate: (String) -> Unit
+) {
     var spaceName by remember { mutableStateOf("") }
-    val context = LocalContext.current
     val gradientColors = listOf(GradientStart, GradientMid, GradientMid2, GradientEnd)
 
     Scaffold(
@@ -73,7 +73,10 @@ fun CreateSpaceScreen(viewModel: MainViewModel) {
             Spacer(modifier = Modifier.height(24.dp))
 
             Button(
-                onClick = { viewModel.saveSpace(context, spaceName) },
+                onClick = {
+                    Log.d("CREATE_SPACE", "Create button clicked with name: $spaceName") // <-- ADD THIS
+                    onCreate(spaceName)
+                },
                 enabled = spaceName.isNotBlank(),
                 modifier = Modifier.fillMaxWidth()
             ) {

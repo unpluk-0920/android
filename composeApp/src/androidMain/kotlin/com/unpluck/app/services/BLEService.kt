@@ -137,7 +137,7 @@ class BleService : Service() {
 
     private val scanCallback = object : ScanCallback() {
         override fun onScanResult(callbackType: Int, result: ScanResult) {
-            Log.d(TAG, "Scanner saw a device: Name=${result.device.name}, Address=${result.device.address}")
+//            Log.d(TAG, "Scanner saw a device: Name=${result.device.name}, Address=${result.device.address}")
 
             val deviceName = result.device.name
             if (deviceName != null) {

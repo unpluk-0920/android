@@ -56,7 +56,7 @@ fun SpaceSettingScreen(viewModel: MainViewModel) {
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    IconButton(onClick = { viewModel.hideSpaceSettings() }) {
+                    IconButton(onClick = { viewModel.navigateBack() }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.Black)
                     }
 
@@ -121,8 +121,8 @@ fun SpaceSettingScreen(viewModel: MainViewModel) {
                     icon = Icons.Rounded.Apps,
                     title = "Apps Allowed",
                     onClick = {
-                        viewModel.loadAllInstalledApps(context) // Load the app list
-                        viewModel.isShowingAppSelection.value = true // Navigate to the new screen
+                        viewModel.loadAllInstalledApps(context)
+                        viewModel.navigateToAppSelection()
                     }
                 )
             }

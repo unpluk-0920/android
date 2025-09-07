@@ -14,7 +14,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.unpluck.app.BleDevice
+import com.unpluck.app.defs.BleDevice
 import com.unpluck.app.ui.theme.GradientEnd
 import com.unpluck.app.ui.theme.GradientMid
 import com.unpluck.app.ui.theme.GradientMid2

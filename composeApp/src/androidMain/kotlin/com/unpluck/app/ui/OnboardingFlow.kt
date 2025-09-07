@@ -1,10 +1,7 @@
-// In ui/OnboardingFlow.kt
 package com.unpluck.app.ui
 
 import android.content.Intent
 import android.provider.Settings
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.*
 import androidx.compose.ui.platform.LocalContext
 import com.unpluck.app.MainViewModel
@@ -67,7 +64,7 @@ fun OnboardingFlow(
             )
         }
         OnboardingStep.CREATE_SPACE -> {
-            CreateSpaceScreen(viewModel = viewModel)
+            CreateSpaceScreen(onCreate = { name -> viewModel.createNewSpace(context, name) })
         }
         OnboardingStep.SET_LAUNCHER -> {
             SetLauncherScreen(
