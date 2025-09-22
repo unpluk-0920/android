@@ -77,26 +77,8 @@ class MainViewModel(private val dao: SpaceDao) : ViewModel() {
     init {
         viewModelScope.launch {
             allSpaces.collect { spaces ->
-                activeSpace.value?.let { currentActive ->
-                    activeSpace.value = spaces.find { it.id == currentActive.id }
-                }
-            }
-        }
-    }
-
-    fun loadInitialSpace(context: Context) {
-        val prefs = context.getSharedPreferences("UnpluckPrefs", Context.MODE_PRIVATE)
-        val lastActiveId = prefs.getString("LAST_ACTIVE_SPACE_ID", null)
-
-        viewModelScope.launch {
-            allSpaces.collect { spaces ->
-                if (spaces.isNotEmpty()) {
-                    val spaceToActivate = if (lastActiveId != null) {
-                        spaces.find { it.id == lastActiveId } ?: spaces.first()
-                    } else {
-                        spaces.first()
-                    }
-                    activeSpace.value = spaceToActivate
+                if (activeSpace.value == null && spaces.isNotEmpty()) {
+                    activeSpace.value = spaces.first()
                 }
             }
         }
@@ -106,6 +88,9 @@ class MainViewModel(private val dao: SpaceDao) : ViewModel() {
         Log.d("VIEW_MODEL", "createNewSpace called with name: $name")
         viewModelScope.launch {
             dao.insert(Space(name = name))
+            // This is now the last step IN the main onboarding flow.
+            // This will trigger MainActivity to show the LauncherSelectionScreen.
+            currentOnboardingStep.value = OnboardingStep.SET_LAUNCHER
         }
     }
 
@@ -129,10 +114,7 @@ class MainViewModel(private val dao: SpaceDao) : ViewModel() {
         }
     }
 
-    fun setActiveSpace(context: Context, space: Space) {
-        val prefs = context.getSharedPreferences("UnpluckPrefs", Context.MODE_PRIVATE)
-        prefs.edit().putString("LAST_ACTIVE_SPACE_ID", space.id).apply()
-
+    fun setActiveSpace(space: Space) {
         activeSpace.value = space
         currentFocusScreen.value = FocusScreen.ACTIVE_SPACE // Go back to the active screen
     }
@@ -205,10 +187,6 @@ class MainViewModel(private val dao: SpaceDao) : ViewModel() {
     }
 
     fun onSpaceCreated() {
-        currentOnboardingStep.value = OnboardingStep.SET_LAUNCHER
-    }
-
-    fun onSpaceCreationDone() {
         currentOnboardingStep.value = OnboardingStep.SET_LAUNCHER
     }
 

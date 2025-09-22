@@ -64,15 +64,7 @@ fun OnboardingFlow(
             )
         }
         OnboardingStep.CREATE_SPACE -> {
-            CreateSpaceScreen(
-                onCreate = {
-                    name -> viewModel.createNewSpace(context, name)
-                    viewModel.onSpaceCreationDone()
-                },
-                onClose = {
-                    viewModel.navigateBack()
-                }
-            )
+            CreateSpaceScreen(onCreate = { name -> viewModel.createNewSpace(context, name) })
         }
         OnboardingStep.SET_LAUNCHER -> {
             SetLauncherScreen(

@@ -116,7 +116,7 @@ class BleService : Service() {
         if (!hasPermissions() || isScanning) return
 
         broadcastStatus("Scanning for devices...", false)
-        // updateNotification("Scanning for devices...")
+        updateNotification("Scanning for devices...")
         isScanning = true
         // REMOVED: ScanFilter, we now scan for everything
         val scanSettings = ScanSettings.Builder()
@@ -130,7 +130,7 @@ class BleService : Service() {
                 isScanning = false
                 bleScanner.stopScan(scanCallback)
                 broadcastStatus("Scan finished.", false)
-                // updateNotification("Scan finished.")
+                updateNotification("Scan finished.")
             }
         }, 10000)
     }
@@ -164,13 +164,13 @@ class BleService : Service() {
             bleScanner.stopScan(scanCallback)
             Log.d(TAG, "Scan stopped due to connection attempt.")
             // Also update the notification to stop showing "Scanning"
-            // updateNotification("Connecting...")
+            updateNotification("Connecting...")
         }
 
         connectionAttemptRunnable?.let { timeoutHandler.removeCallbacks(it) }
 
         broadcastStatus("Connecting to ${device.name ?: device.address}...", false)
-        // updateNotification("Connecting to ${device.name ?: "device"}...")
+        updateNotification("Connecting to ${device.name ?: "device"}...")
         // --- NEW: Start a connection timeout ---
         connectionAttemptRunnable = Runnable {
             Log.e(TAG, "Connection timed out.")
@@ -245,11 +245,10 @@ class BleService : Service() {
 
     private fun broadcastStatus(message: String, isConnected: Boolean) {
         Log.d(TAG, "Broadcasting Status: '$message', isConnected: $isConnected")
-        updateNotification(message)
         val intent = Intent(ACTION_STATUS_UPDATE).apply {
             putExtra(EXTRA_STATUS_MESSAGE, message)
             putExtra(EXTRA_IS_CONNECTED, isConnected)
-            setPackage(packageName)
+            setPackage(packageName) // <-- ADD THIS LINE
         }
         sendBroadcast(intent)
     }
