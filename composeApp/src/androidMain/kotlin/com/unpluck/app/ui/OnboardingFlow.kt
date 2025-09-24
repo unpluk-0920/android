@@ -74,6 +74,17 @@ fun OnboardingFlow(
                 }
             )
         }
+        OnboardingStep.SELECT_LAUNCHER_MODULE -> {
+            LauncherSelectionScreen (
+                viewModel,
+                onLauncherSelected = {
+                    // update view model currentOnboardingStep to SET_LAUNCHER
+                    viewModel.onLauncherSelectedDone()
+
+                    // TODO: select somehow the module or download it in background.
+                }
+            )
+        }
         OnboardingStep.SET_LAUNCHER -> {
             SetLauncherScreen(
                 onSetDefaultLauncher = {

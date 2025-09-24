@@ -14,6 +14,7 @@ import androidx.lifecycle.viewModelScope
 import com.unpluck.app.data.SpaceDao
 import com.unpluck.app.defs.AppInfo
 import com.unpluck.app.defs.BleDevice
+import com.unpluck.app.defs.LauncherType
 import com.unpluck.app.defs.Space
 import com.unpluck.app.services.BleService
 import kotlinx.coroutines.Dispatchers
@@ -28,7 +29,6 @@ enum class FocusScreen {
     SPACE_LIST,
     SPACE_SETTINGS,
     CREATE_SPACE,
-
     APP_SELECTION
 }
 
@@ -37,7 +37,8 @@ enum class OnboardingStep {
     PERMISSIONS,
     CONNECT_DEVICE,
     CREATE_SPACE,
-    SET_LAUNCHER
+    SET_LAUNCHER,
+    SELECT_LAUNCHER_MODULE
 }
 class MainViewModel(private val dao: SpaceDao) : ViewModel() {
 
@@ -63,6 +64,8 @@ class MainViewModel(private val dao: SpaceDao) : ViewModel() {
     val spaceToEdit = mutableStateOf<Space?>(null)
     val allInstalledApps = mutableStateOf<List<AppInfo>>(emptyList())
     val selectedAppPackages = mutableStateOf<Set<String>>(emptySet())
+    val selectedLauncher = mutableStateOf(LauncherType.ORIGINAL_PROXY)
+
     val isShowingAppSelection = mutableStateOf(false)
 
 
@@ -131,7 +134,7 @@ class MainViewModel(private val dao: SpaceDao) : ViewModel() {
 
     fun setActiveSpace(context: Context, space: Space) {
         val prefs = context.getSharedPreferences("UnpluckPrefs", Context.MODE_PRIVATE)
-        prefs.edit().putString("LAST_ACTIVE_SPACE_ID", space.id).apply()
+        prefs.edit { putString("LAST_ACTIVE_SPACE_ID", space.id) }
 
         activeSpace.value = space
         currentFocusScreen.value = FocusScreen.ACTIVE_SPACE // Go back to the active screen
@@ -209,6 +212,10 @@ class MainViewModel(private val dao: SpaceDao) : ViewModel() {
     }
 
     fun onSpaceCreationDone() {
+        currentOnboardingStep.value = OnboardingStep.SELECT_LAUNCHER_MODULE
+    }
+
+    fun onLauncherSelectedDone() {
         currentOnboardingStep.value = OnboardingStep.SET_LAUNCHER
     }
 
@@ -385,5 +392,11 @@ class MainViewModel(private val dao: SpaceDao) : ViewModel() {
         }
         // Navigate back to the main settings screen
         navigateBack()
+    }
+
+    fun saveLauncherChoice(context: Context, launcherType: LauncherType) {
+        val prefs = context.getSharedPreferences("UnpluckPrefs", Context.MODE_PRIVATE)
+        prefs.edit { putString("SELECTED_LAUNCHER_MODULE", launcherType.name) }
+        selectedLauncher.value = launcherType
     }
 }
