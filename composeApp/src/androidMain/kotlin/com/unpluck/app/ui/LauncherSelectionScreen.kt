@@ -56,8 +56,8 @@ fun LauncherSelectionScreen(
         modifier = Modifier.background(
             brush = Brush.linearGradient(colors = gradientColors)
         ),
-        containerColor = Color.Transparent,
-    ) { padding ->
+        containerColor = Color.Transparent
+        ) { padding ->
         Column(
             modifier = Modifier.padding(padding).fillMaxSize(),
             horizontalAlignment = Alignment.CenterHorizontally,
