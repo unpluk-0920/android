@@ -272,39 +272,6 @@ class MainActivity : ComponentActivity() {
             FocusUI(viewModel = viewModel, currentScreen = currentFocusScreen)
         }
     }
-    @Composable
-    private fun LauncherSelectionScreen() {
-        val context = LocalContext.current
-        val packageManager = context.packageManager
-        val prefs = context.getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
-
-        val launchers = remember {
-            val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
-            packageManager.queryIntentActivities(intent, 0)
-                .filter { it.activityInfo.packageName != context.packageName }
-        }
-
-        Column(
-            modifier = Modifier.fillMaxSize(),
-            verticalArrangement = Arrangement.Center,
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Text("Setup: Please Select Your Main Launcher")
-            Spacer(modifier = Modifier.height(24.dp))
-            launchers.forEach { launcherInfo ->
-                Button(onClick = {
-                    prefs.edit {
-                        putString(KEY_REAL_LAUNCHER_PACKAGE, launcherInfo.activityInfo.packageName)
-                        putString(KEY_REAL_LAUNCHER_ACTIVITY, launcherInfo.activityInfo.name)
-                    }
-                    viewModel.launcherSelected.value = true
-                }) {
-                    Text(launcherInfo.loadLabel(packageManager).toString())
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-            }
-        }
-    }
 
     @RequiresApi(Build.VERSION_CODES.O)
     @Composable
