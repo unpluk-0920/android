@@ -216,6 +216,7 @@ class MainViewModel(private val dao: SpaceDao) : ViewModel() {
     }
 
     fun onLauncherSelectedDone() {
+        launcherSelected.value = true
         currentOnboardingStep.value = OnboardingStep.SET_LAUNCHER
     }
 

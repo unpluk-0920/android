@@ -206,14 +206,9 @@ class MainActivity : ComponentActivity() {
         setContent {
             UnplukTheme {
                 val onboardingCompleted by viewModel.onboardingCompleted
-                val launcherSelected by viewModel.launcherSelected
 
                 if (onboardingCompleted) {
-                    if (launcherSelected) {
-                        MainAppUI()
-                    } else {
-                        LauncherSelectionScreen()
-                    }
+                    MainAppUI()
                 } else {
                     OnboardingFlow(
                         viewModel = viewModel,

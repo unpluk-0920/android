@@ -81,7 +81,7 @@ fun LauncherSelectionScreen(
 
 @Composable
 private fun LauncherCard(option: LauncherOption, onSelect: () -> Unit) {
-    var downloadState by remember { mutableStateOf(0f) } // 0f = not started, 1f = complete
+    var downloadState by remember { mutableFloatStateOf(0f) } // 0f = not started, 1f = complete
     var isDownloading by remember { mutableStateOf(false) }
 
     // Simulate download when button is clicked
