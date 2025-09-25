@@ -88,6 +88,8 @@ fun OnboardingFlow(
         OnboardingStep.SET_LAUNCHER -> {
             SetLauncherScreen(
                 onSetDefaultLauncher = {
+                    viewModel.saveCurrentDefaultLauncherInfo(context)
+
                     // 1. Finish onboarding and save the flag FIRST.
                     viewModel.onFinishOnboarding(context)
 

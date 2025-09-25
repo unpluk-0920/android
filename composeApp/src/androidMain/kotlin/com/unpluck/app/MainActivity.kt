@@ -28,11 +28,13 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.Button
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.core.content.edit
@@ -42,6 +44,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import com.unpluck.app.data.AppDatabase
 import com.unpluck.app.defs.BleDevice
+import com.unpluck.app.defs.LauncherType
 import com.unpluck.app.ui.ActiveSpaceUI
 import com.unpluck.app.ui.AppSelectionScreen
 import com.unpluck.app.ui.CreateSpaceScreen
@@ -60,6 +63,10 @@ class MainActivity : ComponentActivity() {
    // --- SharedPreferences KEYS ---
     private val KEY_REAL_LAUNCHER_PACKAGE = "RealLauncherPackage"
     private val KEY_REAL_LAUNCHER_ACTIVITY = "RealLauncherActivity"
+
+    private val KEY_SELECTED_LAUNCHER_MODULE = "SELECTED_LAUNCHER_MODULE"
+    private val KEY_ONBOARDING_COMPLETE = "OnboardingComplete"
+
 
     private val PREFS_NAME = "UnpluckPrefs"
     private val KEY_APP_MODE = "APP_MODE_KEY"
@@ -176,9 +183,9 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         notificationManager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
 
-        val prefs = getSharedPreferences("UnpluckPrefs", MODE_PRIVATE)
+        val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
         viewModel.onboardingCompleted.value = prefs.getBoolean("OnboardingComplete", false)
-        viewModel.launcherSelected.value = prefs.contains("RealLauncherPackage")
+        viewModel.launcherSelected.value = prefs.contains("RealLauncherPackage") // This might need review, but let's keep it for now.
         viewModel.appMode.value = AppMode.valueOf(
             prefs.getString("APP_MODE_KEY", AppMode.NORMAL_MODE.name) ?: AppMode.NORMAL_MODE.name
         )
@@ -186,9 +193,16 @@ class MainActivity : ComponentActivity() {
         viewModel.loadSpaces(this)
         viewModel.loadInitialSpace(this)
 
+        // Handle jumping to launcher selection if requested by HomeRouterActivity
+        if (!viewModel.onboardingCompleted.value && intent.getBooleanExtra("start_on_launcher_selection", false)) {
+            viewModel.currentOnboardingStep.value = OnboardingStep.SELECT_LAUNCHER_MODULE
+            Log.d(TAG, "Jumping directly to Launcher Module Selection step.")
+        }
+
         registerBleUpdateReceiver()
 
         // 5. Lifecycle-aware actions
+        // This part stays mostly the same for starting BLE service, it's independent of UI rendering.
         if (viewModel.onboardingCompleted.value) {
             checkBlePermissionsAndStartService()
         }
@@ -210,6 +224,8 @@ class MainActivity : ComponentActivity() {
                 if (onboardingCompleted) {
                     MainAppUI()
                 } else {
+                    // This will be shown if onboardingCompleted is false AND HomeRouterActivity launched MainActivity without the "jump" flag.
+                    // Or if it did have the jump flag, OnboardingFlow will handle the step change internally.
                     OnboardingFlow(
                         viewModel = viewModel,
                         onRequestBle = { requestBlePermissionsLauncher.launch(getRequiredBlePermissions()) },
@@ -233,6 +249,36 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+//        setContent {
+//            UnplukTheme {
+//                val onboardingCompleted by viewModel.onboardingCompleted
+//
+//                if (onboardingCompleted) {
+//                    MainAppUI()
+//                } else {
+//                    OnboardingFlow(
+//                        viewModel = viewModel,
+//                        onRequestBle = { requestBlePermissionsLauncher.launch(getRequiredBlePermissions()) },
+//                        onRequestOverlay = { checkAndRequestOverlayPermission() },
+//                        onRequestDnd = {
+//                            val intent = Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS)
+//                            requestDndPermissionLauncher.launch(intent)
+//                        },
+//                        onRequestNotification = {
+//                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+//                                requestNotificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+//                            }
+//                        },
+//                        onRequestLocation = {
+//                            requestLocationPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+//                        },
+//                        onRequestPhone = {
+//                            requestPhonePermissionsLauncher.launch(arrayOf(Manifest.permission.READ_CALL_LOG, Manifest.permission.READ_CONTACTS))
+//                        }
+//                    )
+//                }
+//            }
+//        }
     }
 
     @RequiresApi(Build.VERSION_CODES.O)
@@ -240,24 +286,57 @@ class MainActivity : ComponentActivity() {
     private fun MainAppUI() {
         val currentMode by viewModel.appMode
         val currentFocusScreen by viewModel.currentFocusScreen
+        val selectedLauncherType by viewModel.selectedLauncher // Still useful for displaying info or internal logic
 
-        // NEW: Local state to control the animation trigger. Starts as false.
+        // Local state to control the Focus Mode animation
         var showFocusUI by remember { mutableStateOf(false) }
 
-        // This effect runs when the composable first appears or when currentMode changes.
-        // It syncs our local animation trigger with the real app state.
         LaunchedEffect(currentMode) {
             showFocusUI = (currentMode == AppMode.FOCUS_MODE)
         }
 
-        // Now we can go back to a simpler structure
+        // When in NORMAL_MODE, display Unpluck's regular UI
+        // The HomeRouterActivity has already decided that MainActivity should be showing.
+        // It's up to MainActivity to decide what to show internally based on selectedLauncherType.
+        // For ORIGINAL_PROXY, HomeRouterActivity would have launched the external app.
+        // For KISS/LAWNCHAIR, HomeRouterActivity would have launched MainActivity, and here we display Unpluck's internal representation.
         if (currentMode == AppMode.NORMAL_MODE) {
-            // We only show the proxy when in normal mode. It doesn't need to animate.
-            ProxyToRealLauncher()
+            when (selectedLauncherType) {
+                LauncherType.KISS, LauncherType.LAWNCHAIR -> {
+                    // For these, Unpluck is acting as the home. Display its internal UI.
+                    // This is where your custom KISS/Lawnchair *internal UI* would go when implemented as modules.
+                    // For now, it's a placeholder.
+                    UnpluckHomeDisplay(
+                        viewModel = viewModel,
+                        message = "Welcome to Unpluck's ${selectedLauncherType.name} Home!",
+                        showDevButtons = true
+                    )
+                }
+                LauncherType.ORIGINAL_PROXY -> {
+                    // This case *should* generally not be reached if HomeRouterActivity successfully launched the original proxy.
+                    // However, as a fallback, if HomeRouterActivity couldn't launch it, it would launch MainActivity,
+                    // in which case we display Unpluck's default home.
+                    UnpluckHomeDisplay(
+                        viewModel = viewModel,
+                        message = "Welcome to Unpluck's Home (Fallback for Original Proxy)!",
+                        showDevButtons = true
+                    )
+                }
+                null -> {
+                    // This means onboarding is done but somehow no launcher was selected.
+                    // HomeRouterActivity should ideally catch this and restart onboarding.
+                    // As a final fallback, display Unpluck's home.
+                    UnpluckHomeDisplay(
+                        viewModel = viewModel,
+                        message = "Welcome to Unpluck's Home (No Launcher Selected Fallback)!",
+                        showDevButtons = true
+                    )
+                }
+            }
         }
 
-        // The animation is now driven by the local 'showFocusUI' state,
-        // which guarantees a false -> true transition on screen.
+        // The FocusUI will always animate in/out based on showFocusUI state,
+        // overlaying whatever is beneath it.
         AnimatedVisibility(
             visible = showFocusUI,
             enter = slideInVertically(
@@ -273,6 +352,47 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    @Composable
+    private fun UnpluckHomeDisplay(viewModel: MainViewModel, message: String, showDevButtons: Boolean = false) {
+        val context = LocalContext.current // Get context here
+        val activity = context as? Activity // Cast to Activity if possible
+
+        Column(
+            modifier = Modifier.fillMaxSize(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Text(message, style = MaterialTheme.typography.headlineLarge, textAlign = TextAlign.Center)
+            Spacer(modifier = Modifier.height(16.dp))
+            if (showDevButtons) {
+                Button(onClick = { viewModel.appMode.value = AppMode.FOCUS_MODE }) {
+                    Text("Enter Focus Mode (for testing)")
+                }
+                Spacer(modifier = Modifier.height(16.dp))
+                Button(onClick = {
+                    // For demonstration, if you want to allow re-selecting launchers
+                    val prefs = context.getSharedPreferences("UnpluckPrefs", Context.MODE_PRIVATE)
+                    prefs.edit { remove(KEY_SELECTED_LAUNCHER_MODULE) }
+                    prefs.edit { remove(KEY_ONBOARDING_COMPLETE) } // Reset onboarding
+
+                    // These ViewModel updates are internal and fine
+                    viewModel.onboardingCompleted.value = false
+                    viewModel.currentOnboardingStep.value = OnboardingStep.SELECT_LAUNCHER_MODULE
+
+                    // Finish current activity to let HomeRouterActivity pick up the change
+                    // This call needs to happen on an Activity context.
+                    activity?.finish()
+
+                    // The system will now naturally look for the CATEGORY_HOME activity again,
+                    // which is HomeRouterActivity, and it will see onboarding is reset.
+                    // We don't need to manually start HomeRouterActivity here.
+                    // Removing: LocalContext.current.startActivity(Intent(LocalContext.current, HomeRouterActivity::class.java))
+                }) {
+                    Text("Re-select Launcher (Dev Only)")
+                }
+            }
+        }
+    }
     @RequiresApi(Build.VERSION_CODES.O)
     @Composable
     private fun FocusUI(viewModel: MainViewModel, currentScreen: FocusScreen) {
@@ -309,16 +429,6 @@ class MainActivity : ComponentActivity() {
                 AppSelectionScreen(viewModel = viewModel)
             }
         }
-    }
-
-    @Composable
-    private fun ProxyToRealLauncher() {
-        val context = LocalContext.current
-        // This effect runs once to launch the real launcher and then finish this activity
-        LaunchedEffect(Unit) {
-            launchRealLauncher(context)
-        }
-        // You can show a blank screen or a loading indicator here while it switches
     }
 
     private fun getRequiredBlePermissions(): Array<String> {
@@ -371,23 +481,6 @@ class MainActivity : ComponentActivity() {
         isReceiverRegistered = true
     }
 
-    private fun launchRealLauncher(context: Context) {
-        val prefs = context.getSharedPreferences("UnpluckPrefs", MODE_PRIVATE)
-        val pkg = prefs.getString("RealLauncherPackage", null)
-        val activity = prefs.getString("RealLauncherActivity", null)
-        if (pkg != null && activity != null) {
-            val launchIntent = Intent().setClassName(pkg, activity).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            try {
-                context.startActivity(launchIntent)
-            } catch (e: Exception) {
-                // Handle case where launcher was uninstalled
-                prefs.edit { clear() }
-                viewModel.launcherSelected.value = false
-            }
-        }
-        (context as? Activity)?.finish()
-    }
-
     private fun hasDndPermission(): Boolean = notificationManager.isNotificationPolicyAccessGranted
 
     private fun toggleDnd(enable: Boolean) {
@@ -405,11 +498,10 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        viewModel.updatePermissionStates(this)
         // CRITICAL: This handles the home button press from another app.
         // If we are in NORMAL_MODE, immediately proxy to the real launcher.
-        if (viewModel.onboardingCompleted.value && viewModel.appMode.value == AppMode.NORMAL_MODE && viewModel.launcherSelected.value) {
-            launchRealLauncher(this)
-        }
+        Log.d(TAG, "MainActivity onResume: Displaying Unpluck's UI.")
     }
 
     override fun onDestroy() {

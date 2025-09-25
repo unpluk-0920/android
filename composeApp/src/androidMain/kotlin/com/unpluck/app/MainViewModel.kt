@@ -43,6 +43,8 @@ enum class OnboardingStep {
 class MainViewModel(private val dao: SpaceDao) : ViewModel() {
 
     private val TAG = "MAIN_VIEWMODEL"
+    private val KEY_REAL_LAUNCHER_PACKAGE = "RealLauncherPackage"
+    private val KEY_REAL_LAUNCHER_ACTIVITY = "RealLauncherActivity"
     // --- ONBOARDING STATE ---
     val currentOnboardingStep = mutableStateOf(OnboardingStep.INTRO)
 
@@ -399,5 +401,46 @@ class MainViewModel(private val dao: SpaceDao) : ViewModel() {
         val prefs = context.getSharedPreferences("UnpluckPrefs", Context.MODE_PRIVATE)
         prefs.edit { putString("SELECTED_LAUNCHER_MODULE", launcherType.name) }
         selectedLauncher.value = launcherType
+    }
+
+    fun saveCurrentDefaultLauncherInfo(context: Context) {
+        val packageManager = context.packageManager
+        val homeIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
+
+        // Get all activities that can handle a HOME intent
+        val resolveInfos = packageManager.queryIntentActivities(homeIntent, PackageManager.MATCH_DEFAULT_ONLY)
+
+        // Filter out Unpluck itself and the IntentResolver
+        val actualHomeLaunchers = resolveInfos.filter {
+            it.activityInfo.packageName != context.packageName && // Exclude Unpluck
+                    it.activityInfo.packageName != "com.android.intentresolver" // Exclude the system chooser
+        }
+
+        // Try to find the *currently preferred* or the *first non-Unpluck* launcher
+        var targetPackage: String? = null
+        var targetActivity: String? = null
+
+        // Attempt to find the currently preferred launcher (if one is set)
+        // This usually requires a different API or might not be directly available for 'default' in this context.
+        // A simpler approach for *capturing the default Unpluck will proxy to* is to take the first non-Unpluck one.
+        if (actualHomeLaunchers.isNotEmpty()) {
+            val preferredHome = actualHomeLaunchers.first() // Take the first one found, assuming it's the desired default.
+            targetPackage = preferredHome.activityInfo.packageName
+            targetActivity = preferredHome.activityInfo.name
+        }
+
+
+        if (targetPackage != null && targetActivity != null) {
+            val prefs = context.getSharedPreferences("UnpluckPrefs", Context.MODE_PRIVATE)
+            prefs.edit {
+                putString(KEY_REAL_LAUNCHER_PACKAGE, targetPackage) // Use your defined keys
+                putString(KEY_REAL_LAUNCHER_ACTIVITY, targetActivity) // Use your defined keys
+            }
+            Log.d(TAG, "Saved real launcher: Pkg=$targetPackage, Act=$targetActivity")
+        } else {
+            Log.e(TAG, "Could not find a suitable non-Unpluck default launcher to save. Defaulting to system behavior.")
+            // If we can't find one, it's better to NOT save anything, so HomeRouter will go to Unpluck.
+            // Or, you could decide to explicitly store a known default launcher like Pixel Launcher or a safe fallback.
+        }
     }
 }
