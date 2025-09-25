@@ -28,6 +28,7 @@
     <!-- ALERT PERMISSIONS -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
+    <!-- queries -->
     <queries>
         <intent>
             <action android:name="android.intent.action.MAIN" />
