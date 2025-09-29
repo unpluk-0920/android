@@ -9,4 +9,5 @@ plugins {
     alias(libs.plugins.kotlinAndroid) apply false
     id("org.jetbrains.kotlin.plugin.serialization") version "2.2.10" apply false
     alias(libs.plugins.ksp) apply false
+    alias(libs.plugins.androidDynamicFeature) apply false
 }
