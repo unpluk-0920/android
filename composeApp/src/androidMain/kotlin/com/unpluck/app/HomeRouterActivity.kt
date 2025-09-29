@@ -21,6 +21,8 @@ class HomeRouterActivity : ComponentActivity() {
     private val KEY_SELECTED_LAUNCHER_MODULE = "SELECTED_LAUNCHER_MODULE"
     private val KEY_REAL_LAUNCHER_PACKAGE = "RealLauncherPackage" // Re-used key from MainActivity
     private val KEY_REAL_LAUNCHER_ACTIVITY = "RealLauncherActivity" // Re-used key from MainActivity
+    private val KISS_LAUNCHER_PACKAGE = "fr.neamar.kiss"
+    private val KISS_LAUNCHER_ACTIVITY = "fr.neamar.kiss.KissMainActivity"
 
     // We'll instantiate the ViewModel directly as done in MainActivity (though not strictly needed here)
     // private lateinit var viewModel: MainViewModel // Not needed in HomeRouterActivity after all.
@@ -32,15 +34,24 @@ class HomeRouterActivity : ComponentActivity() {
         val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val onboardingCompleted = prefs.getBoolean(KEY_ONBOARDING_COMPLETE, false)
         val selectedLauncherTypeString = prefs.getString(KEY_SELECTED_LAUNCHER_MODULE, null)
+        val currentMode = prefs.getString("APP_MODE_KEY", null)
         val selectedLauncherType = selectedLauncherTypeString?.let { LauncherType.valueOf(it) }
 
-        Log.d(TAG, "OnboardingComplete: $onboardingCompleted, SelectedLauncherModule: $selectedLauncherType")
+        Log.d(TAG, "OnboardingComplete: $onboardingCompleted, SelectedLauncherModule: $selectedLauncherType, currentMode $currentMode")
 
         if (!onboardingCompleted) {
             Log.i(TAG, "Routing to MainActivity for Onboarding (Onboarding not completed).")
             // Launch MainActivity, which will display OnboardingFlow because viewModel.onboardingCompleted will be false
             startActivity(Intent(this, MainActivity::class.java))
-        } else {
+        }
+        else if (currentMode == AppMode.FOCUS_MODE.toString()) {
+            Log.i(TAG, "Unpluck is in FOCUS_MODE. Launching Unpluck's MainActivity.")
+            val intent = Intent(this, MainActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            }
+            startActivity(intent)
+        }
+        else {
             // Onboarding is complete, decide what to launch based on selected launcher type
             when (selectedLauncherType) {
                 LauncherType.ORIGINAL_PROXY -> {
@@ -59,10 +70,17 @@ class HomeRouterActivity : ComponentActivity() {
                 }
                 LauncherType.KISS, LauncherType.LAWNCHAIR -> {
                     Log.i(TAG, "Selected $selectedLauncherType. Launching Unpluck's own MainActivity (placeholder for future module).")
-                    // For KISS/Lawnchair, Unpluck itself will act as the home.
-                    // When modules are ready, this will launch a specific internal activity or service.
-                    // For now, it means MainActivity will show Unpluck's UI.
-                    startActivity(Intent(this, MainActivity::class.java))
+                    if (isAppInstalled(KISS_LAUNCHER_PACKAGE)) {
+                        launchExternalAppAsLauncher(KISS_LAUNCHER_PACKAGE, KISS_LAUNCHER_ACTIVITY)
+                    } else {
+                        Log.w(TAG, "KISS Launcher is selected but not installed. Launching Unpluck's MainActivity.")
+                        Toast.makeText(this, "KISS Launcher not found. Please install it.", Toast.LENGTH_LONG).show()
+                        // Fallback: Launch Unpluck's own MainActivity or direct user to install KISS
+                        val intent = Intent(this, MainActivity::class.java).apply {
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                        }
+                        startActivity(intent)
+                    }
                 }
                 null -> {
                     Log.w(TAG, "No launcher module selected (even after onboarding). Routing to MainActivity for Onboarding to re-select.")
@@ -79,6 +97,15 @@ class HomeRouterActivity : ComponentActivity() {
         // HomeRouterActivity always finishes itself after routing to the appropriate activity.
         // This prevents it from being on the back stack and avoids loops with itself.
         finish()
+    }
+
+    private fun isAppInstalled(packageName: String): Boolean {
+        return try {
+            packageManager.getPackageInfo(packageName, 0)
+            true
+        } catch (e: PackageManager.NameNotFoundException) {
+            false
+        }
     }
 
     /**

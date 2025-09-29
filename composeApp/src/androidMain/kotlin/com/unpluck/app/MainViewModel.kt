@@ -1,5 +1,6 @@
 package com.unpluck.app
 
+import android.app.Application
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -8,8 +9,8 @@ import android.provider.Settings
 import android.util.Log
 import androidx.compose.runtime.mutableStateOf
 import androidx.core.content.ContextCompat
-import androidx.lifecycle.ViewModel
 import androidx.core.content.edit
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.unpluck.app.data.SpaceDao
 import com.unpluck.app.defs.AppInfo
@@ -18,8 +19,12 @@ import com.unpluck.app.defs.LauncherType
 import com.unpluck.app.defs.Space
 import com.unpluck.app.services.BleService
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -40,11 +45,18 @@ enum class OnboardingStep {
     SET_LAUNCHER,
     SELECT_LAUNCHER_MODULE
 }
-class MainViewModel(private val dao: SpaceDao) : ViewModel() {
-
+class MainViewModel(
+    application: Application,
+    private val dao: SpaceDao
+) : AndroidViewModel(application) {
     private val TAG = "MAIN_VIEWMODEL"
+    private val PREFS_NAME = "UnpluckPrefs"
     private val KEY_REAL_LAUNCHER_PACKAGE = "RealLauncherPackage"
     private val KEY_REAL_LAUNCHER_ACTIVITY = "RealLauncherActivity"
+    private val KEY_ONBOARDING_COMPLETE = "OnboardingComplete" // Added from HomeRouterActivity
+    private val KEY_SELECTED_LAUNCHER_MODULE = "SELECTED_LAUNCHER_MODULE" // Added from HomeRouterActivity
+    private val KEY_APP_MODE = "APP_MODE_KEY" // Added for appMode persistence
+
     // --- ONBOARDING STATE ---
     val currentOnboardingStep = mutableStateOf(OnboardingStep.INTRO)
 
@@ -59,7 +71,8 @@ class MainViewModel(private val dao: SpaceDao) : ViewModel() {
     val connectionStatus = mutableStateOf("Not connected")
     val isDeviceConnected = mutableStateOf(false)
     val spaces = mutableStateOf<List<Space>>(emptyList())
-    val appMode = mutableStateOf(AppMode.NORMAL_MODE)
+    private val _appMode = MutableStateFlow(AppMode.NORMAL_MODE)
+    val appMode: StateFlow<AppMode> = _appMode.asStateFlow()
     val launcherSelected = mutableStateOf(false)
     val onboardingCompleted = mutableStateOf(false)
     val isShowingSpaceSettings = mutableStateOf(false)
@@ -80,6 +93,25 @@ class MainViewModel(private val dao: SpaceDao) : ViewModel() {
     val phonePermissionsGranted = mutableStateOf(false)
 
     init {
+        val appContext = getApplication<Application>().applicationContext
+        val prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+
+        // Load onboarding status and launcher type from preferences
+        onboardingCompleted.value = prefs.getBoolean(KEY_ONBOARDING_COMPLETE, false)
+        val savedLauncherTypeString = prefs.getString(KEY_SELECTED_LAUNCHER_MODULE, null)
+        selectedLauncher.value = savedLauncherTypeString?.let { LauncherType.valueOf(it) } ?: LauncherType.ORIGINAL_PROXY
+
+        // Load appMode from preferences
+        val savedAppModeString = prefs.getString(KEY_APP_MODE, AppMode.NORMAL_MODE.name)
+        _appMode.value = AppMode.valueOf(savedAppModeString ?: AppMode.NORMAL_MODE.name)
+
+        // Observe and save appMode changes
+        _appMode.onEach { mode ->
+            prefs.edit { putString(KEY_APP_MODE, mode.name) }
+            Log.d(TAG, "AppMode changed and saved: ${mode.name}")
+        }.launchIn(viewModelScope)
+
+        // Existing init logic for spaces
         viewModelScope.launch {
             allSpaces.collect { spaces ->
                 activeSpace.value?.let { currentActive ->
@@ -87,6 +119,31 @@ class MainViewModel(private val dao: SpaceDao) : ViewModel() {
                 }
             }
         }
+
+        if (!onboardingCompleted.value) { // Only if onboarding is not yet complete
+            // Skip directly to the next step after permissions
+            currentOnboardingStep.value = OnboardingStep.CONNECT_DEVICE // Or whatever step comes next
+            Log.d(TAG, "Permissions step temporarily bypassed for testing.")
+            // You might also want to set permissions as "granted" for testing if they cause crashes later
+            blePermissionsGranted.value = true
+            overlayPermissionGranted.value = true
+            dndPermissionGranted.value = true
+            notificationPermissionGranted.value = true
+            locationPermissionGranted.value = true
+            phonePermissionsGranted.value = true
+        } else {
+            // If onboarding is complete, ensure it starts at INTRO (or relevant step)
+            // or if it was already on some step, it remains there.
+            // For existing users, this path is not critical, as onboardingCompleted.value is true.
+        }
+
+        updatePermissionStates(appContext)
+        loadSpaces(appContext)
+        loadInitialSpace(appContext)
+    }
+
+    fun setAppMode(mode: AppMode) {
+        _appMode.value = mode
     }
 
     fun loadInitialSpace(context: Context) {
@@ -116,7 +173,10 @@ class MainViewModel(private val dao: SpaceDao) : ViewModel() {
 
     fun navigateToSpaceList() { currentFocusScreen.value = FocusScreen.SPACE_LIST }
     fun navigateToCreateSpace() { currentFocusScreen.value = FocusScreen.CREATE_SPACE }
-    fun navigateToAppSelection() { currentFocusScreen.value = FocusScreen.APP_SELECTION }
+    fun navigateToAppSelection() {
+        currentFocusScreen.value = FocusScreen.APP_SELECTION
+        loadAllInstalledApps(getApplication<Application>().applicationContext)
+    }
     fun navigateToSettings(space: Space) {
         spaceToEdit.value = space
         selectedAppPackages.value = space.appIds.toSet()
@@ -351,20 +411,42 @@ class MainViewModel(private val dao: SpaceDao) : ViewModel() {
     fun loadAllInstalledApps(context: Context) {
         viewModelScope.launch(Dispatchers.IO) {
             val packageManager = context.packageManager
-            val mainIntent = Intent(Intent.ACTION_MAIN, null).addCategory(Intent.CATEGORY_LAUNCHER)
-            val apps = packageManager.queryIntentActivities(mainIntent, 0)
-                .mapNotNull {
+
+            // --- CHANGED LOGIC HERE ---
+            // Get a list of ALL installed packages (ApplicationInfo)
+            val installedApplicationInfos = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                packageManager.getInstalledApplications(PackageManager.ApplicationInfoFlags.of(0L))
+            } else {
+                @Suppress("DEPRECATION") // For older API levels
+                packageManager.getInstalledApplications(0)
+            }
+
+            val apps = installedApplicationInfos
+                .mapNotNull { appInfo ->
                     try {
-                        AppInfo(
-                            name = it.loadLabel(packageManager).toString(),
-                            packageName = it.activityInfo.packageName,
-                            icon = it.loadIcon(packageManager)
-                        )
+                        // Optional: Filter out system apps that don't have a launcher icon
+                        // This will prevent showing many background system services.
+                        // Remove this 'if' block if you truly want *every single* installed package.
+                        val isSystemApp = (appInfo.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM) != 0
+                        val hasLauncher = packageManager.getLaunchIntentForPackage(appInfo.packageName) != null
+
+                        if (!isSystemApp || hasLauncher) { // Keep user apps OR system apps with a launcher
+                            AppInfo(
+                                name = packageManager.getApplicationLabel(appInfo).toString(),
+                                packageName = appInfo.packageName,
+                                icon = packageManager.getApplicationIcon(appInfo)
+                            )
+                        } else {
+                            null // Filter out system apps without a launcher
+                        }
+
                     } catch (e: Exception) {
+                        // Log errors for specific packages, but don't crash the entire list loading
+                        Log.e("MainViewModel", "Error loading app info for ${appInfo.packageName}: ${e.message}")
                         null
                     }
                 }
-                .sortedBy { it.name.lowercase() }
+                .sortedBy { it.name.lowercase() } // Sort by app name alphabetically
 
             withContext(Dispatchers.Main) {
                 allInstalledApps.value = apps
