@@ -1,7 +1,5 @@
-// In ui/LauncherSelectionScreen.kt
 package com.unpluck.app.ui
 
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -29,12 +27,11 @@ import com.unpluck.app.ui.theme.GradientMid2
 import com.unpluck.app.ui.theme.GradientStart
 import kotlinx.coroutines.delay
 
-// Data class to hold info for our pager
 data class LauncherOption(
     val type: LauncherType,
     val title: String,
     val description: String,
-    val imageResId: Int // e.g., R.drawable.image_of_kiss_launcher
+    val imageResId: Int
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -45,8 +42,8 @@ fun LauncherSelectionScreen(
 ) {
     val launcherOptions = listOf(
         LauncherOption(LauncherType.ORIGINAL_PROXY, "Original Launcher", "Keep your phone's default home screen.", R.drawable.home),
-        LauncherOption(LauncherType.KISS, "KISS Launcher", "A fast, simple, and minimalist experience.", R.drawable.kiss),
-        LauncherOption(LauncherType.LAWNCHAIR, "Lawnchair", "A powerful, feature-rich launcher based on the Pixel experience.", R.drawable.lawnchair)
+        LauncherOption(LauncherType.COMING_SOON, "Search based launcher", "coming soon", R.drawable.home),
+        LauncherOption(LauncherType.COMING_SOON, "Minimalism based launcher", "Coming Soon", R.drawable.home)
     )
 
     val pagerState = rememberPagerState(pageCount = { launcherOptions.size })
@@ -67,12 +64,14 @@ fun LauncherSelectionScreen(
             Spacer(modifier = Modifier.height(32.dp))
             val context = LocalContext.current
             HorizontalPager(state = pagerState, contentPadding = PaddingValues(horizontal = 40.dp)) { page ->
+                val isDownloadButtonEnabled = launcherOptions[page].type == LauncherType.COMING_SOON
                 LauncherCard(
                     option = launcherOptions[page],
                     onSelect = {
                         viewModel.saveLauncherChoice(context, launcherOptions[page].type)
                         onLauncherSelected()
-                    }
+                    },
+                    !isDownloadButtonEnabled,
                 )
             }
         }
@@ -80,7 +79,7 @@ fun LauncherSelectionScreen(
 }
 
 @Composable
-private fun LauncherCard(option: LauncherOption, onSelect: () -> Unit) {
+private fun LauncherCard(option: LauncherOption, onSelect: () -> Unit, isDownloadDisabled: Boolean) {
     var downloadState by remember { mutableFloatStateOf(0f) } // 0f = not started, 1f = complete
     var isDownloading by remember { mutableStateOf(false) }
 
@@ -108,18 +107,19 @@ private fun LauncherCard(option: LauncherOption, onSelect: () -> Unit) {
             Text(option.description, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 8.dp))
             Spacer(modifier = Modifier.height(24.dp))
 
-            // Custom Download/Select Button
-            Box(contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(
-                    progress = { downloadState },
-                    modifier = Modifier.size(64.dp),
-                    strokeWidth = 3.dp,
-                )
-                IconButton(
-                    onClick = { if (!isDownloading) isDownloading = true },
-                    modifier = Modifier.size(56.dp)
-                ) {
-                    Icon(Icons.Default.Download, contentDescription = "Download and Select")
+            if (isDownloadDisabled) {
+                Box(contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(
+                        progress = { downloadState },
+                        modifier = Modifier.size(64.dp),
+                        strokeWidth = 3.dp,
+                    )
+                    IconButton(
+                        onClick = { if (!isDownloading) isDownloading = true },
+                        modifier = Modifier.size(56.dp)
+                    ) {
+                        Icon(Icons.Default.Download, contentDescription = "Download and Select")
+                    }
                 }
             }
         }

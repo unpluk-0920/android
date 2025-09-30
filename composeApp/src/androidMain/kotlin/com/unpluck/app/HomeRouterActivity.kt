@@ -9,31 +9,20 @@ import android.os.Bundle
 import android.util.Log
 import android.widget.Toast
 import androidx.activity.ComponentActivity
-import com.unpluck.app.data.AppDatabase
-import com.unpluck.app.defs.LauncherType // Import your LauncherType enum
+import com.unpluck.app.defs.LauncherType
 import androidx.core.content.edit
+import com.unpluck.app.defs.CONSTANTS
 
 class HomeRouterActivity : ComponentActivity() {
-
     private val TAG = "HomeRouterActivity"
-    private val PREFS_NAME = "UnpluckPrefs"
-    private val KEY_ONBOARDING_COMPLETE = "OnboardingComplete"
-    private val KEY_SELECTED_LAUNCHER_MODULE = "SELECTED_LAUNCHER_MODULE"
-    private val KEY_REAL_LAUNCHER_PACKAGE = "RealLauncherPackage" // Re-used key from MainActivity
-    private val KEY_REAL_LAUNCHER_ACTIVITY = "RealLauncherActivity" // Re-used key from MainActivity
-    private val KISS_LAUNCHER_PACKAGE = "fr.neamar.kiss"
-    private val KISS_LAUNCHER_ACTIVITY = "fr.neamar.kiss.KissMainActivity"
-
-    // We'll instantiate the ViewModel directly as done in MainActivity (though not strictly needed here)
-    // private lateinit var viewModel: MainViewModel // Not needed in HomeRouterActivity after all.
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        Log.i(TAG, "HomeRouterActivity onCreate() called.")
+        Log.i(TAG, "HomeRouterActivity onCreate()")
 
-        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val onboardingCompleted = prefs.getBoolean(KEY_ONBOARDING_COMPLETE, false)
-        val selectedLauncherTypeString = prefs.getString(KEY_SELECTED_LAUNCHER_MODULE, null)
+        val prefs = getSharedPreferences(CONSTANTS.PREFS_NAME, Context.MODE_PRIVATE)
+        val onboardingCompleted = prefs.getBoolean(CONSTANTS.KEY_ONBOARDING_COMPLETE, false)
+        val selectedLauncherTypeString = prefs.getString(CONSTANTS.KEY_SELECTED_LAUNCHER_MODULE, null)
         val currentMode = prefs.getString("APP_MODE_KEY", null)
         val selectedLauncherType = selectedLauncherTypeString?.let { LauncherType.valueOf(it) }
 
@@ -54,11 +43,11 @@ class HomeRouterActivity : ComponentActivity() {
         else {
             // Onboarding is complete, decide what to launch based on selected launcher type
             when (selectedLauncherType) {
-                LauncherType.ORIGINAL_PROXY -> {
+                LauncherType.ORIGINAL_PROXY, LauncherType.COMING_SOON -> {
                     Log.i(TAG, "Selected ORIGINAL_PROXY. Attempting to launch system's default home.")
                     // This is where we launch the *original* launcher that was saved during setup.
-                    val realLauncherPkg = prefs.getString(KEY_REAL_LAUNCHER_PACKAGE, null)
-                    val realLauncherAct = prefs.getString(KEY_REAL_LAUNCHER_ACTIVITY, null)
+                    val realLauncherPkg = prefs.getString(CONSTANTS.KEY_REAL_LAUNCHER_PACKAGE, null)
+                    val realLauncherAct = prefs.getString(CONSTANTS.KEY_REAL_LAUNCHER_ACTIVITY, null)
 
                     if (realLauncherPkg != null) {
                         launchExternalAppAsLauncher(realLauncherPkg, realLauncherAct)
@@ -70,8 +59,8 @@ class HomeRouterActivity : ComponentActivity() {
                 }
                 LauncherType.KISS, LauncherType.LAWNCHAIR -> {
                     Log.i(TAG, "Selected $selectedLauncherType. Launching Unpluck's own MainActivity (placeholder for future module).")
-                    if (isAppInstalled(KISS_LAUNCHER_PACKAGE)) {
-                        launchExternalAppAsLauncher(KISS_LAUNCHER_PACKAGE, KISS_LAUNCHER_ACTIVITY)
+                    if (isAppInstalled(CONSTANTS.KISS_LAUNCHER_PACKAGE)) {
+                        launchExternalAppAsLauncher(CONSTANTS.KISS_LAUNCHER_PACKAGE, CONSTANTS.KISS_LAUNCHER_ACTIVITY)
                     } else {
                         Log.w(TAG, "KISS Launcher is selected but not installed. Launching Unpluck's MainActivity.")
                         Toast.makeText(this, "KISS Launcher not found. Please install it.", Toast.LENGTH_LONG).show()
@@ -133,9 +122,9 @@ class HomeRouterActivity : ComponentActivity() {
                 Log.e(TAG, "Failed to launch external app $packageName: ${e.message}")
                 Toast.makeText(this, "Could not launch selected launcher. Please re-select a launcher.", Toast.LENGTH_LONG).show()
                 // Clear the problematic choice and direct to Unpluck's home as a fallback
-                getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit {
-                    remove(KEY_REAL_LAUNCHER_PACKAGE)
-                        .remove(KEY_REAL_LAUNCHER_ACTIVITY)
+                getSharedPreferences(CONSTANTS.PREFS_NAME, Context.MODE_PRIVATE).edit {
+                    remove(CONSTANTS.KEY_REAL_LAUNCHER_PACKAGE)
+                        .remove(CONSTANTS.KEY_REAL_LAUNCHER_ACTIVITY)
                 }
                 // Fallback to Unpluck's main activity
                 startActivity(Intent(this, MainActivity::class.java))
@@ -144,12 +133,27 @@ class HomeRouterActivity : ComponentActivity() {
             Log.e(TAG, "Could not find launch intent for external app: $packageName")
             Toast.makeText(this, "Selected launcher app not found. Please re-select.", Toast.LENGTH_LONG).show()
             // Clear the problematic choice and direct to Unpluck's home as a fallback
-            getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit {
-                remove(KEY_REAL_LAUNCHER_PACKAGE)
-                    .remove(KEY_REAL_LAUNCHER_ACTIVITY)
+            getSharedPreferences(CONSTANTS.PREFS_NAME, Context.MODE_PRIVATE).edit {
+                remove(CONSTANTS.KEY_REAL_LAUNCHER_PACKAGE)
+                    .remove(CONSTANTS.KEY_REAL_LAUNCHER_ACTIVITY)
             }
             // Fallback to Unpluck's main activity
             startActivity(Intent(this, MainActivity::class.java))
         }
+    }
+
+    override fun onPause() {
+        super.onPause()
+//        Log.i(TAG, "HomeRouterActivity onPause()")
+    }
+
+    override fun onResume() {
+        super.onResume()
+//        Log.i(TAG, "HomeRouterActivity onResume()")
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+//        Log.i(TAG, "HomeRouterActivity onDestroy()")
     }
 }

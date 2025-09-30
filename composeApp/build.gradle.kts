@@ -79,7 +79,6 @@ android {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
     }
-    dynamicFeatures += setOf(":launcher_kiss")
 }
 
 dependencies {

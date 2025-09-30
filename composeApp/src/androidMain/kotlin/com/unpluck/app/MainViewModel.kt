@@ -17,6 +17,7 @@ import com.unpluck.app.defs.AppInfo
 import com.unpluck.app.defs.BleDevice
 import com.unpluck.app.defs.LauncherType
 import com.unpluck.app.defs.Space
+import com.unpluck.app.defs.CONSTANTS
 import com.unpluck.app.services.BleService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -50,13 +51,6 @@ class MainViewModel(
     private val dao: SpaceDao
 ) : AndroidViewModel(application) {
     private val TAG = "MAIN_VIEWMODEL"
-    private val PREFS_NAME = "UnpluckPrefs"
-    private val KEY_REAL_LAUNCHER_PACKAGE = "RealLauncherPackage"
-    private val KEY_REAL_LAUNCHER_ACTIVITY = "RealLauncherActivity"
-    private val KEY_ONBOARDING_COMPLETE = "OnboardingComplete" // Added from HomeRouterActivity
-    private val KEY_SELECTED_LAUNCHER_MODULE = "SELECTED_LAUNCHER_MODULE" // Added from HomeRouterActivity
-    private val KEY_APP_MODE = "APP_MODE_KEY" // Added for appMode persistence
-
     // --- ONBOARDING STATE ---
     val currentOnboardingStep = mutableStateOf(OnboardingStep.INTRO)
 
@@ -94,20 +88,20 @@ class MainViewModel(
 
     init {
         val appContext = getApplication<Application>().applicationContext
-        val prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val prefs = appContext.getSharedPreferences(CONSTANTS.PREFS_NAME, Context.MODE_PRIVATE)
 
         // Load onboarding status and launcher type from preferences
-        onboardingCompleted.value = prefs.getBoolean(KEY_ONBOARDING_COMPLETE, false)
-        val savedLauncherTypeString = prefs.getString(KEY_SELECTED_LAUNCHER_MODULE, null)
+        onboardingCompleted.value = prefs.getBoolean(CONSTANTS.KEY_ONBOARDING_COMPLETE, false)
+        val savedLauncherTypeString = prefs.getString(CONSTANTS.KEY_SELECTED_LAUNCHER_MODULE, null)
         selectedLauncher.value = savedLauncherTypeString?.let { LauncherType.valueOf(it) } ?: LauncherType.ORIGINAL_PROXY
 
         // Load appMode from preferences
-        val savedAppModeString = prefs.getString(KEY_APP_MODE, AppMode.NORMAL_MODE.name)
+        val savedAppModeString = prefs.getString(CONSTANTS.KEY_APP_MODE, AppMode.NORMAL_MODE.name)
         _appMode.value = AppMode.valueOf(savedAppModeString ?: AppMode.NORMAL_MODE.name)
 
         // Observe and save appMode changes
         _appMode.onEach { mode ->
-            prefs.edit { putString(KEY_APP_MODE, mode.name) }
+            prefs.edit { putString(CONSTANTS.KEY_APP_MODE, mode.name) }
             Log.d(TAG, "AppMode changed and saved: ${mode.name}")
         }.launchIn(viewModelScope)
 
@@ -515,8 +509,8 @@ class MainViewModel(
         if (targetPackage != null && targetActivity != null) {
             val prefs = context.getSharedPreferences("UnpluckPrefs", Context.MODE_PRIVATE)
             prefs.edit {
-                putString(KEY_REAL_LAUNCHER_PACKAGE, targetPackage) // Use your defined keys
-                putString(KEY_REAL_LAUNCHER_ACTIVITY, targetActivity) // Use your defined keys
+                putString(CONSTANTS.KEY_REAL_LAUNCHER_PACKAGE, targetPackage) // Use your defined keys
+                putString(CONSTANTS.KEY_REAL_LAUNCHER_ACTIVITY, targetActivity) // Use your defined keys
             }
             Log.d(TAG, "Saved real launcher: Pkg=$targetPackage, Act=$targetActivity")
         } else {
