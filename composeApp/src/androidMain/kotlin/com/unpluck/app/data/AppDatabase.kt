@@ -6,7 +6,7 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import com.unpluck.app.defs.Space
 
-@Database(entities = [Space::class], version = 1)
+@Database(entities = [Space::class], version = 2)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun spaceDao(): SpaceDao
 
@@ -20,7 +20,9 @@ abstract class AppDatabase : RoomDatabase() {
                     context.applicationContext,
                     AppDatabase::class.java,
                     "unpluk_database"
-                ).build()
+                )
+                    .fallbackToDestructiveMigration(false)
+                    .build()
                 INSTANCE = instance
                 instance
             }

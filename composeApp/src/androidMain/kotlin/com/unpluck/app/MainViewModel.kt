@@ -35,7 +35,8 @@ enum class FocusScreen {
     SPACE_LIST,
     SPACE_SETTINGS,
     CREATE_SPACE,
-    APP_SELECTION
+    APP_SELECTION,
+    CONTACT_SELECTION
 }
 
 enum class OnboardingStep {
@@ -46,6 +47,8 @@ enum class OnboardingStep {
     SET_LAUNCHER,
     SELECT_LAUNCHER_MODULE
 }
+
+data class ContactInfo(val id: String, val name: String)
 class MainViewModel(
     application: Application,
     private val dao: SpaceDao
@@ -76,6 +79,8 @@ class MainViewModel(
     val selectedLauncher = mutableStateOf(LauncherType.ORIGINAL_PROXY)
 
     val isShowingAppSelection = mutableStateOf(false)
+    val allContacts = mutableStateOf<List<ContactInfo>>(emptyList())
+    val selectedContactIds = mutableStateOf<Set<String>>(emptySet())
 
 
     // PERMISSIONS STATE
@@ -112,23 +117,6 @@ class MainViewModel(
                     activeSpace.value = spaces.find { it.id == currentActive.id }
                 }
             }
-        }
-
-        if (!onboardingCompleted.value) { // Only if onboarding is not yet complete
-            // Skip directly to the next step after permissions
-            currentOnboardingStep.value = OnboardingStep.CONNECT_DEVICE // Or whatever step comes next
-            Log.d(TAG, "Permissions step temporarily bypassed for testing.")
-            // You might also want to set permissions as "granted" for testing if they cause crashes later
-            blePermissionsGranted.value = true
-            overlayPermissionGranted.value = true
-            dndPermissionGranted.value = true
-            notificationPermissionGranted.value = true
-            locationPermissionGranted.value = true
-            phonePermissionsGranted.value = true
-        } else {
-            // If onboarding is complete, ensure it starts at INTRO (or relevant step)
-            // or if it was already on some step, it remains there.
-            // For existing users, this path is not critical, as onboardingCompleted.value is true.
         }
 
         updatePermissionStates(appContext)
@@ -275,6 +263,8 @@ class MainViewModel(
         launcherSelected.value = true
         currentOnboardingStep.value = OnboardingStep.SET_LAUNCHER
     }
+
+    fun navigateToContactSelection() { currentFocusScreen.value = FocusScreen.CONTACT_SELECTION }
 
     fun updatePermissionStates(context: Context) {
         val requiredPermissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -517,6 +507,45 @@ class MainViewModel(
             Log.e(TAG, "Could not find a suitable non-Unpluck default launcher to save. Defaulting to system behavior.")
             // If we can't find one, it's better to NOT save anything, so HomeRouter will go to Unpluck.
             // Or, you could decide to explicitly store a known default launcher like Pixel Launcher or a safe fallback.
+        }
+    }
+
+    fun updateDndSetting(isEnabled: Boolean) {
+        val space = spaceToEdit.value ?: return
+        viewModelScope.launch {
+            dao.update(space.copy(isDndEnabled = isEnabled))
+        }
+    }
+
+    fun updateCallBlockingSetting(isEnabled: Boolean) {
+        val space = spaceToEdit.value ?: return
+        viewModelScope.launch {
+            dao.update(space.copy(isCallBlockingEnabled = isEnabled))
+        }
+    }
+
+    fun onContactSelectionChanged(contactId: String, isSelected: Boolean) {
+        val currentSelection = selectedContactIds.value.toMutableSet()
+        if (isSelected) currentSelection.add(contactId) else currentSelection.remove(contactId)
+        selectedContactIds.value = currentSelection
+    }
+
+    fun loadContacts(context: Context) {
+        // This is a placeholder for loading contacts, which is a complex operation
+        // that needs ContentResolver and should be done on a background thread.
+        // For now, we'll use dummy data.
+        allContacts.value = listOf(
+            ContactInfo("1", "Alice"), ContactInfo("2", "Bob"), ContactInfo("3", "Charlie")
+        )
+        // Also load the currently selected contacts for this space
+        selectedContactIds.value = spaceToEdit.value?.allowedContactIds?.toSet() ?: emptySet()
+    }
+
+    fun saveContactSelection() {
+        val space = spaceToEdit.value ?: return
+        viewModelScope.launch {
+            dao.update(space.copy(allowedContactIds = selectedContactIds.value.toList()))
+            navigateBack() // Navigate from contact picker back to settings
         }
     }
 }

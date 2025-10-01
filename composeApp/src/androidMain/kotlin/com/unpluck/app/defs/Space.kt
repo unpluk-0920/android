@@ -11,11 +11,26 @@ import java.util.UUID
 data class Space(
     @PrimaryKey val id: String = UUID.randomUUID().toString(),
     val name: String,
-    val appIds: List<String> = emptyList()
+    val appIds: List<String> = emptyList(),
+    val isDndEnabled: Boolean = false,
+    val isCallBlockingEnabled: Boolean = false,
+    val allowedContactIds: List<String> = emptyList()
 )
 
 // This helper class tells Room how to save a List<String>
 class AppIdConverter {
+    @TypeConverter
+    fun fromString(value: String?): List<String> {
+        return value?.split(",")?.filter { it.isNotEmpty() } ?: emptyList()
+    }
+
+    @TypeConverter
+    fun fromList(list: List<String>?): String {
+        return list?.joinToString(",") ?: ""
+    }
+}
+
+class ContactIdConverter {
     @TypeConverter
     fun fromString(value: String?): List<String> {
         return value?.split(",")?.filter { it.isNotEmpty() } ?: emptyList()

@@ -39,6 +39,7 @@ import com.unpluck.app.defs.CONSTANTS
 import com.unpluck.app.factory.MainViewModelFactory
 import com.unpluck.app.ui.ActiveSpaceUI
 import com.unpluck.app.ui.AppSelectionScreen
+import com.unpluck.app.ui.ContactPickerScreen
 import com.unpluck.app.ui.CreateSpaceScreen
 import com.unpluck.app.ui.OnboardingFlow
 import com.unpluck.app.ui.SpaceSettingScreen
@@ -279,6 +280,7 @@ class MainActivity : ComponentActivity() {
             FocusScreen.APP_SELECTION -> {
                 AppSelectionScreen(viewModel = viewModel)
             }
+            FocusScreen.CONTACT_SELECTION -> ContactPickerScreen(viewModel = viewModel)
         }
     }
 

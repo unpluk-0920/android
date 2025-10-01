@@ -95,24 +95,31 @@ fun SpaceSettingScreen(viewModel: MainViewModel) {
             item { Spacer(modifier = Modifier.height(16.dp)) }
 
             item {
+                val context = LocalContext.current
                 SettingsRow(
                     icon = Icons.Rounded.Contacts,
                     title = "Allowed Contacts",
-                    onClick = { Log.d("Settings", "Navigate to Allowed Contacts screen") }
+                    onClick = {
+                        viewModel.loadContacts(context)
+                        viewModel.navigateToContactSelection()
+                    }
                 )
             }
             item {
-                SettingsRow(
+                Log.i("SpaceSettingScreen", "isDndEnabled: ${space.isDndEnabled}")
+                SettingsSwitchRow(
                     icon = Icons.Rounded.NotificationsOff,
-                    title = "Block Notifications",
-                    onClick = { Log.d("Settings", "Navigate to Notification settings screen") }
+                    title = "Block Notifications (DND)",
+                    isChecked = space.isDndEnabled,
+                    onCheckedChange = { viewModel.updateDndSetting(it) }
                 )
             }
             item {
-                SettingsRow(
+                SettingsSwitchRow(
                     icon = Icons.Rounded.PhoneDisabled,
                     title = "Block Calls",
-                    onClick = { Log.d("Settings", "Navigate to Block Calls screen") }
+                    isChecked = space.isCallBlockingEnabled,
+                    onCheckedChange = { viewModel.updateCallBlockingSetting(it) }
                 )
             }
             item {
