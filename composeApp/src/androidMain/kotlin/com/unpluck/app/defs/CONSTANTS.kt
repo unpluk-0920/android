@@ -9,4 +9,6 @@ object CONSTANTS {
     const val KEY_REAL_LAUNCHER_ACTIVITY = "RealLauncherActivity"
     const val KISS_LAUNCHER_PACKAGE = "fr.neamar.kiss"
     const val KISS_LAUNCHER_ACTIVITY = "fr.neamar.kiss.KissMainActivity"
+    const val ACTION_CALL_BLOCKING_SETTINGS_CHANGED = "com.unpluck.app.ACTION_CALL_BLOCKING_SETTINGS_CHANGED"
+    const val KEY_ACTIVE_SPACE_ID = "LAST_ACTIVE_SPACE_ID"
 }

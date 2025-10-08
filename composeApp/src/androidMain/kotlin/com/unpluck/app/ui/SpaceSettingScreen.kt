@@ -28,8 +28,13 @@ import com.unpluck.app.ui.theme.GradientStart
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SpaceSettingScreen(viewModel: MainViewModel) {
+fun SpaceSettingScreen(
+    viewModel: MainViewModel,
+    requestCallScreeningRole: () -> Unit
+) {
     val space = viewModel.spaceToEdit.value ?: return
+    var isDNDDisabled by remember { mutableStateOf(space.isDndEnabled)  }
+    var isCALLBlockingEnabled by remember { mutableStateOf(space.isCallBlockingEnabled)  }
     val context = LocalContext.current
     val gradientColors = listOf(GradientStart, GradientMid, GradientMid2, GradientEnd)
 
@@ -110,16 +115,23 @@ fun SpaceSettingScreen(viewModel: MainViewModel) {
                 SettingsSwitchRow(
                     icon = Icons.Rounded.NotificationsOff,
                     title = "Block Notifications (DND)",
-                    isChecked = space.isDndEnabled,
-                    onCheckedChange = { viewModel.updateDndSetting(it) }
+                    isChecked = isDNDDisabled,
+                    onCheckedChange = {
+                        viewModel.updateDndSetting(it)
+                        isDNDDisabled = !isDNDDisabled
+                    }
                 )
             }
             item {
                 SettingsSwitchRow(
                     icon = Icons.Rounded.PhoneDisabled,
                     title = "Block Calls",
-                    isChecked = space.isCallBlockingEnabled,
-                    onCheckedChange = { viewModel.updateCallBlockingSetting(it) }
+                    isChecked = isCALLBlockingEnabled,
+                    onCheckedChange = {
+                        requestCallScreeningRole()
+                        viewModel.updateCallBlockingSetting(it)
+                        isCALLBlockingEnabled = !isCALLBlockingEnabled
+                    }
                 )
             }
             item {

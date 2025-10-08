@@ -3,6 +3,7 @@ package com.unpluck.app
 import SpaceListScreen
 import android.Manifest
 import android.app.NotificationManager
+import android.app.role.RoleManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -155,6 +156,19 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    fun requestCallScreeningRole() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) { // CallScreeningService is API 29+ (Q)
+            val roleManager = getSystemService(Context.ROLE_SERVICE) as RoleManager
+            if (roleManager.isRoleAvailable(RoleManager.ROLE_CALL_SCREENING) && !roleManager.isRoleHeld(RoleManager.ROLE_CALL_SCREENING)) {
+                val intent = roleManager.createRequestRoleIntent(RoleManager.ROLE_CALL_SCREENING)
+                requestRoleLauncher.launch(intent)
+            } else if (roleManager.isRoleHeld(RoleManager.ROLE_CALL_SCREENING)) {
+                Log.d(TAG, "Unpluck is already the Call Screening app.")
+                // Optionally inform the user or update UI
+            }
+        }
+    }
+
     // --- LIFECYCLE METHODS ---
     @RequiresApi(Build.VERSION_CODES.O)
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -276,7 +290,7 @@ class MainActivity : ComponentActivity() {
                     viewModel.navigateBack()
                 }
             )
-            FocusScreen.SPACE_SETTINGS -> SpaceSettingScreen(viewModel)
+            FocusScreen.SPACE_SETTINGS -> SpaceSettingScreen(viewModel) { requestCallScreeningRole() }
             FocusScreen.APP_SELECTION -> {
                 AppSelectionScreen(viewModel = viewModel)
             }

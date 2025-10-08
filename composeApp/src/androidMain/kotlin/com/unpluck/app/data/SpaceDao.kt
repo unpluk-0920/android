@@ -14,4 +14,7 @@ interface SpaceDao {
 
     @Query("SELECT * FROM spaces ORDER BY name ASC")
     fun getAllSpaces(): Flow<List<Space>>
+
+    @Query("SELECT * FROM spaces WHERE id = :spaceId")
+    fun getSpaceById(spaceId: String): Flow<Space?>
 }

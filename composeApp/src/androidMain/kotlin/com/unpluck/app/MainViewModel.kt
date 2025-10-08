@@ -1,6 +1,8 @@
 package com.unpluck.app
 
 import android.app.Application
+import android.app.NotificationManager
+import android.app.role.RoleManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -29,6 +31,8 @@ import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import android.content.Context.NOTIFICATION_SERVICE
+import androidx.core.content.ContextCompat.getSystemService
 
 enum class FocusScreen {
     ACTIVE_SPACE,
@@ -510,17 +514,68 @@ class MainViewModel(
         }
     }
 
+    private val notificationManager: NotificationManager by lazy {
+        getApplication<Application>().getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+    }
+
+    // New function to toggle DND in the system
+    fun toggleSystemDnd(enable: Boolean) {
+        val appContext = getApplication<Application>().applicationContext
+        if (!notificationManager.isNotificationPolicyAccessGranted) {
+            Log.w(TAG, "DND permission not granted. Cannot toggle DND.")
+            // You might want to trigger UI to request permission again here,
+            // or pass a message back to the UI.
+            return
+        }
+
+        notificationManager.setInterruptionFilter(
+            if (enable) NotificationManager.INTERRUPTION_FILTER_PRIORITY
+            else NotificationManager.INTERRUPTION_FILTER_ALL
+        )
+        Log.d(TAG, "System DND set to: ${if(enable) "PRIORITY" else "ALL"}")
+    }
+
     fun updateDndSetting(isEnabled: Boolean) {
         val space = spaceToEdit.value ?: return
         viewModelScope.launch {
             dao.update(space.copy(isDndEnabled = isEnabled))
+            toggleSystemDnd(isEnabled)
+        }
+    }
+
+    fun handleFocusModeDnd() {
+        Log.d(TAG, "handleFocusModeDnd called. Current app mode: ${appMode.value}")
+        val activeSpaceDndEnabled = activeSpace.value?.isDndEnabled ?: false
+
+        if (appMode.value == AppMode.FOCUS_MODE && activeSpaceDndEnabled) {
+            // Enter Focus Mode, DND enabled for space
+            Log.d(TAG, "Entering Focus Mode and DND is enabled for active space. Toggling system DND ON.")
+            toggleSystemDnd(true)
+        } else {
+            // Exiting Focus Mode, or DND not enabled for space.
+            // Ensure DND is turned OFF when not in Focus Mode or if the space doesn't want it.
+            Log.d(TAG, "Exiting Focus Mode or DND not enabled for active space. Toggling system DND OFF.")
+            toggleSystemDnd(false)
         }
     }
 
     fun updateCallBlockingSetting(isEnabled: Boolean) {
         val space = spaceToEdit.value ?: return
         viewModelScope.launch {
-            dao.update(space.copy(isCallBlockingEnabled = isEnabled))
+            val updatedSpace = space.copy(isCallBlockingEnabled = isEnabled)
+            dao.update(updatedSpace)
+            spaceToEdit.value = updatedSpace
+            Log.d(TAG, "Call blocking setting for ${updatedSpace.name} updated to: $isEnabled")
+
+            // You might want to trigger the CallScreeningService to re-evaluate its rules
+            // This could be via a broadcast or by restarting the service,
+            // depending on how your UnpluckCallScreeningService is designed.
+            // For now, let's just log it.
+            Log.d(TAG, "Call blocking setting changed. Consider notifying CallScreeningService.")
+            // A simple way to trigger re-evaluation without restarting is to send a broadcast.
+            val appContext = getApplication<Application>().applicationContext
+            val intent = Intent(CONSTANTS.ACTION_CALL_BLOCKING_SETTINGS_CHANGED).setPackage(appContext.packageName)
+            appContext.sendBroadcast(intent)
         }
     }
 
