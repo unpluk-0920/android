@@ -3,6 +3,7 @@ package com.unpluck.app
 import android.app.Application
 import android.app.NotificationManager
 import android.app.role.RoleManager
+import android.content.ContentResolver
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -32,6 +33,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import android.content.Context.NOTIFICATION_SERVICE
+import android.provider.ContactsContract
 import androidx.core.content.ContextCompat.getSystemService
 
 enum class FocusScreen {
@@ -153,7 +155,12 @@ class MainViewModel(
     fun createNewSpace(context: Context, name: String) {
         Log.d("VIEW_MODEL", "createNewSpace called with name: $name")
         viewModelScope.launch {
-            dao.insert(Space(name = name))
+            val space = Space(name = name)
+            dao.insert(space)
+            val prefs = context.getSharedPreferences("UnpluckPrefs", Context.MODE_PRIVATE)
+            prefs.edit { putString("LAST_ACTIVE_SPACE_ID", space.id) }
+
+            activeSpace.value = space
         }
     }
 
@@ -169,13 +176,13 @@ class MainViewModel(
         currentFocusScreen.value = FocusScreen.SPACE_SETTINGS
     }
     fun navigateBack() {
-        Log.d("VIEW_MODEL", "navigateBack called. Current screen is ${currentFocusScreen.value}") // <-- ADD THIS
-        // Simple back navigation logic
+        Log.d("VIEW_MODEL", "navigateBack called. Current screen is ${currentFocusScreen.value}")
         when(currentFocusScreen.value) {
             FocusScreen.SPACE_LIST -> currentFocusScreen.value = FocusScreen.ACTIVE_SPACE
             FocusScreen.CREATE_SPACE -> currentFocusScreen.value = FocusScreen.SPACE_LIST
             FocusScreen.SPACE_SETTINGS -> currentFocusScreen.value = FocusScreen.SPACE_LIST
             FocusScreen.APP_SELECTION -> currentFocusScreen.value = FocusScreen.SPACE_SETTINGS
+            FocusScreen.CONTACT_SELECTION -> currentFocusScreen.value = FocusScreen.SPACE_SETTINGS
             else -> {}
         }
     }
@@ -268,7 +275,10 @@ class MainViewModel(
         currentOnboardingStep.value = OnboardingStep.SET_LAUNCHER
     }
 
-    fun navigateToContactSelection() { currentFocusScreen.value = FocusScreen.CONTACT_SELECTION }
+    fun navigateToContactSelection() {
+        currentFocusScreen.value = FocusScreen.CONTACT_SELECTION
+        loadContacts(getApplication<Application>().applicationContext)
+    }
 
     fun updatePermissionStates(context: Context) {
         val requiredPermissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -586,20 +596,52 @@ class MainViewModel(
     }
 
     fun loadContacts(context: Context) {
-        // This is a placeholder for loading contacts, which is a complex operation
-        // that needs ContentResolver and should be done on a background thread.
-        // For now, we'll use dummy data.
-        allContacts.value = listOf(
-            ContactInfo("1", "Alice"), ContactInfo("2", "Bob"), ContactInfo("3", "Charlie")
-        )
-        // Also load the currently selected contacts for this space
-        selectedContactIds.value = spaceToEdit.value?.allowedContactIds?.toSet() ?: emptySet()
+        viewModelScope.launch(Dispatchers.IO) {
+            val contactsList = mutableListOf<ContactInfo>()
+            val contentResolver: ContentResolver = context.contentResolver
+
+            val projection = arrayOf(
+                ContactsContract.Contacts._ID,
+                ContactsContract.Contacts.DISPLAY_NAME_PRIMARY
+            )
+
+            contentResolver.query(
+                ContactsContract.Contacts.CONTENT_URI,
+                projection,
+                null,
+                null,
+                ContactsContract.Contacts.DISPLAY_NAME_PRIMARY + " ASC" // Sort by name
+            )?.use { cursor ->
+                val idColumn = cursor.getColumnIndex(ContactsContract.Contacts._ID)
+                val nameColumn = cursor.getColumnIndex(ContactsContract.Contacts.DISPLAY_NAME_PRIMARY)
+
+                while (cursor.moveToNext()) {
+                    val contactId = cursor.getString(idColumn)
+                    val contactName = cursor.getString(nameColumn)
+                    if (contactId != null && !contactName.isNullOrBlank()) {
+                        contactsList.add(ContactInfo(contactId, contactName))
+                    }
+                }
+            }
+            withContext(Dispatchers.Main) {
+                allContacts.value = contactsList
+                // Initialize selectedContactIds from the spaceToEdit (if available)
+                selectedContactIds.value = spaceToEdit.value?.allowedContactIds?.toSet() ?: emptySet()
+                Log.d(TAG, "Loaded ${allContacts.value.size} contacts. Currently selected: ${selectedContactIds.value.size}")
+            }
+        }
     }
 
     fun saveContactSelection() {
         val space = spaceToEdit.value ?: return
         viewModelScope.launch {
-            dao.update(space.copy(allowedContactIds = selectedContactIds.value.toList()))
+            val updatedSpace = space.copy(allowedContactIds = selectedContactIds.value.toList())
+            dao.update(updatedSpace) // This updates the database
+
+            // "Hack" to update the local mutableStateOf directly
+            spaceToEdit.value = updatedSpace
+            Log.d(TAG, "Saved contact selection for ${updatedSpace.name}: ${updatedSpace.allowedContactIds.size} contacts.")
+
             navigateBack() // Navigate from contact picker back to settings
         }
     }

@@ -28,6 +28,7 @@ import com.unpluck.app.MainActivity
 import com.unpluck.app.R
 import java.util.*
 import androidx.core.content.edit
+import com.unpluck.app.defs.CONSTANTS
 
 // These UUIDs must match your ESP32 code
 private const val SERVICE_UUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
@@ -274,7 +275,7 @@ class BleService : Service() {
             return // Do nothing if the message is unknown
         }
 
-        prefs.edit { putString("APP_MODE_KEY", newMode) }
+        prefs.edit { putString(CONSTANTS.KEY_APP_MODE, newMode) }
         Log.d(TAG, "App mode saved: $newMode")
 
         // 3. Send a single, generic broadcast that the mode has changed

@@ -5,9 +5,14 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.os.Build
+import android.provider.ContactsContract
 import android.telecom.Call
 import android.telecom.CallScreeningService
+import android.telephony.PhoneNumberUtils
+import android.telephony.TelephonyManager
 import android.util.Log
+import androidx.core.content.ContextCompat
 import com.unpluck.app.AppMode // Import if needed
 import com.unpluck.app.data.AppDatabase
 import com.unpluck.app.data.SpaceDao
@@ -17,6 +22,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
+import java.util.concurrent.ConcurrentHashMap
 
 class UnpluckCallScreeningService : CallScreeningService() {
     private val TAG = "CallScreeningService"
@@ -30,10 +36,11 @@ class UnpluckCallScreeningService : CallScreeningService() {
     private var isCallBlockingActiveSpaceEnabled: Boolean = false
     private var allowedContactIdsForActiveSpace: Set<String> = emptySet()
 
+    private val allowedPhoneNumbersCache = ConcurrentHashMap<String, Set<String>>() // contactId -> Set<PhoneNumber>
+
     // Assuming you have a way to get the current app mode (e.g., from SharedPreferences)
     // and the active space ID.
-    private val prefs by lazy { getSharedPreferences(CONSTANTS.PREFS_NAME, Context.MODE_PRIVATE) }
-
+    private val prefs by lazy { getSharedPreferences(CONSTANTS.PREFS_NAME, MODE_PRIVATE) }
 
     private val settingsChangedReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -53,7 +60,11 @@ class UnpluckCallScreeningService : CallScreeningService() {
 
         // Register the broadcast receiver
         val filter = IntentFilter(CONSTANTS.ACTION_CALL_BLOCKING_SETTINGS_CHANGED)
-        appContext.registerReceiver(settingsChangedReceiver, filter)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            appContext.registerReceiver(settingsChangedReceiver, filter, RECEIVER_NOT_EXPORTED)
+        } else {
+            appContext.registerReceiver(settingsChangedReceiver, filter)
+        }
 
         // Load initial settings
         loadActiveSpaceCallBlockingSettings()
@@ -67,6 +78,7 @@ class UnpluckCallScreeningService : CallScreeningService() {
         val response = CallResponse.Builder()
 
         // Get current app mode
+        Log.i(TAG,"${prefs.all}")
         val currentAppMode = prefs.getString(CONSTANTS.KEY_APP_MODE, AppMode.NORMAL_MODE.name)?.let { AppMode.valueOf(it) } ?: AppMode.NORMAL_MODE
 
         // Only block calls if the app is in FOCUS_MODE AND call blocking is enabled for the active space
@@ -103,78 +115,98 @@ class UnpluckCallScreeningService : CallScreeningService() {
             if (activeSpaceId != null) {
                 val activeSpace = spaceDao.getSpaceById(activeSpaceId).firstOrNull()
                 isCallBlockingActiveSpaceEnabled = activeSpace?.isCallBlockingEnabled ?: false
-                allowedContactIdsForActiveSpace = activeSpace?.allowedContactIds?.toSet() ?: emptySet()
+                val currentAllowedContactIds = activeSpace?.allowedContactIds?.toSet() ?: emptySet()
+                allowedContactIdsForActiveSpace = currentAllowedContactIds // Update the IDs
+
                 Log.d(TAG, "Loaded active space call blocking settings: enabled=$isCallBlockingActiveSpaceEnabled, allowedContacts=${allowedContactIdsForActiveSpace.size}")
+
+                // Clear and re-populate the phone number cache based on new IDs
+                repopulateAllowedPhoneNumbersCache(currentAllowedContactIds)
+
             } else {
                 isCallBlockingActiveSpaceEnabled = false
                 allowedContactIdsForActiveSpace = emptySet()
+                allowedPhoneNumbersCache.clear() // Clear cache if no active space
                 Log.d(TAG, "No active space ID found. Call blocking disabled.")
             }
         }
     }
 
-    private fun checkNumberAgainstAllowedContacts(incomingNumber: String): Boolean {
-        // This is a placeholder. A real implementation needs to:
-        // 1. Query Android's ContactsContract to get phone numbers for allowedContactIds.
-        // 2. Compare the incomingNumber with these retrieved numbers.
-        // This is complex and requires READ_CONTACTS permission.
-        // For a hack, you might just return true for any number if allowedContactIds is empty
-        // or always false if allowedContactIds is not empty and no number matches.
-
-        if (allowedContactIdsForActiveSpace.isEmpty()) {
-            return true // If no specific contacts are allowed, perhaps all are implicitly allowed?
-            // Or, if empty, means "block all" if isCallBlockingActiveSpaceEnabled is true.
-            // Adjust this logic based on your UX. Let's assume if empty, no specific ALLOW rules,
-            // so it falls to the general blocking unless it's a "whitelist all" scenario.
+    private fun repopulateAllowedPhoneNumbersCache(contactIds: Set<String>) {
+        if (contactIds.isEmpty()) {
+            allowedPhoneNumbersCache.clear()
+            return
         }
 
-        // --- REALISTIC HACK/PLACEHOLDER ---
-        // For a quick check, without full contact resolution:
-        // If you are storing phone numbers directly in `allowedContactIds` instead of contact IDs:
-        // return allowedContactIdsForActiveSpace.contains(incomingNumber)
+        val newCache = ConcurrentHashMap<String, Set<String>>()
 
-        // If it's contact IDs, this needs a ContentResolver query.
-        // For now, let's just make it always block if it's not explicitly empty.
-        // This means if call blocking is ON and allowed contacts list is NOT empty,
-        // any call not explicitly matching a *mock* allowed number would be blocked.
-        // A full implementation of `checkNumberAgainstAllowedContacts` would involve:
-        /*
-        val contactNumbers = mutableSetOf<String>()
-        val uri = ContactsContract.CommonDataKinds.Phone.CONTENT_URI
+        val contentResolver = appContext.contentResolver
         val projection = arrayOf(
             ContactsContract.CommonDataKinds.Phone.CONTACT_ID,
             ContactsContract.CommonDataKinds.Phone.NUMBER
         )
-        // This is a simplified example. For actual contact ID matching,
-        // you'd need to iterate through allowedContactIdsForActiveSpace
-        // and query for each, or build a complex WHERE clause.
-        val selection = "${ContactsContract.CommonDataKinds.Phone.CONTACT_ID} IN (${allowedContactIdsForActiveSpace.joinToString(",") { "?" }})"
-        val selectionArgs = allowedContactIdsForActiveSpace.toTypedArray()
 
-        appContext.contentResolver.query(uri, projection, selection, selectionArgs, null)?.use { cursor ->
+        // Build a selection clause for all contact IDs
+        val selection = "${ContactsContract.CommonDataKinds.Phone.CONTACT_ID} IN (${contactIds.joinToString(",") { "?" }})"
+        val selectionArgs = contactIds.toTypedArray()
+
+        contentResolver.query(
+            ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+            projection,
+            selection,
+            selectionArgs,
+            null
+        )?.use { cursor ->
+            val contactIdColumn = cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.CONTACT_ID)
             val numberColumn = cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER)
+
             while (cursor.moveToNext()) {
-                val number = cursor.getString(numberColumn)
-                if (number != null) {
-                    contactNumbers.add(number.normalizePhoneNumber()) // Need a normalization function
+                val contactId = cursor.getString(contactIdColumn)
+                val rawNumber = cursor.getString(numberColumn)
+
+                if (contactId != null && !rawNumber.isNullOrBlank()) {
+                    val normalizedNumber = PhoneNumberUtils.normalizeNumber(rawNumber) // Use system's normalization
+                    if (normalizedNumber != null) {
+                        newCache.compute(contactId) { _, currentNumbers ->
+                            (currentNumbers ?: emptySet()) + normalizedNumber
+                        }
+                    }
                 }
             }
         }
-        return contactNumbers.contains(incomingNumber.normalizePhoneNumber())
-        */
+        allowedPhoneNumbersCache.clear()
+        allowedPhoneNumbersCache.putAll(newCache)
+        Log.d(TAG, "Repopulated allowed phone numbers cache. Total contacts with numbers: ${allowedPhoneNumbersCache.size}")
+    }
 
-        // For the "hack" without full contact resolution:
-        // Let's assume for simplicity: if allowedContactIdsForActiveSpace is NOT empty,
-        // we're implementing a whitelist. If the incoming number isn't explicitly in the whitelist
-        // (which we can't fully check without the ContentResolver), it's blocked.
-        // THIS IS VERY SIMPLIFIED AND NOT A REAL-WORLD WHITELIST CHECK.
-        // For a basic test, if you were to manually put phone numbers into allowedContactIds,
-        // you could do: return allowedContactIdsForActiveSpace.contains(incomingNumber)
+    private fun checkNumberAgainstAllowedContacts(incomingNumber: String): Boolean {
+        if (allowedContactIdsForActiveSpace.isEmpty()) {
+            // If the whitelist is empty, decide default behavior:
+            // - true: Allow all calls (effectively, no whitelist applied)
+            // - false: Block all calls (if call blocking is enabled)
+            // Let's assume for now: if user enables call blocking but picks no contacts, it means block all.
+            return false // If no contacts are allowed, then the incoming number is NOT allowed.
+        }
 
-        // For now, if allowedContactIds is NOT empty, we'll assume it's a whitelist.
-        // Since we can't properly resolve numbers to IDs here without more code,
-        // for demo purposes, let's just allow an arbitrary "safe" number, or block otherwise.
-        return false // By default, block if whitelist is active and we can't verify.
+        val normalizedIncomingNumber = PhoneNumberUtils.normalizeNumber(incomingNumber) ?: return false
+
+        // Get the device's default country ISO
+        val telephonyManager = appContext.getSystemService(Context.TELEPHONY_SERVICE) as TelephonyManager
+        val defaultCountryIso = telephonyManager.networkCountryIso?.uppercase() ?: "IN" // Fallback to "US" or your app's primary target country
+
+
+        // Iterate through all cached allowed phone numbers and check for a match
+        return allowedPhoneNumbersCache.values.any { numbers ->
+            numbers.any { allowedNum ->
+                // --- CHANGE THIS LINE ---
+                // Use the recommended PhoneNumberUtils.arePhoneNumberIdentical(String, String, String)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    PhoneNumberUtils.areSamePhoneNumber(allowedNum, normalizedIncomingNumber, defaultCountryIso)
+                } else {
+                    TODO("VERSION.SDK_INT < S")
+                }
+            }
+        }
     }
 
 
